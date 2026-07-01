@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⑥ 验证者 Agent · 闭环修复</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f0f2f5;
+    color: #1a1a1a;
+    padding: 32px 20px;
+    min-height: 100vh;
+  }
+  .page-wrapper { max-width: 860px; margin: 0 auto; }
+
+  .page-header { text-align: center; margin-bottom: 28px; }
+  .page-header h1 { font-size: 20px; font-weight: 700; }
+  .page-header p { font-size: 13px; color: #888; margin-top: 6px; }
+  .nav-links { display: flex; justify-content: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .nav-link { font-size: 12px; color: #6366f1; text-decoration: none; padding: 4px 12px; background: #eef2ff; border-radius: 20px; }
+  .nav-link:hover { background: #e0e7ff; }
+
+  .card { background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; padding: 20px 24px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card p { font-size: 13px; line-height: 1.8; color: #374151; margin-bottom: 10px; }
+
+  /* 四项检查 */
+  .check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+  .check-card { border-radius: 10px; padding: 14px; border: 1.5px solid transparent; }
+  .check-num { font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+  .check-title { font-size: 13px; font-weight: 700; margin-bottom: 5px; }
+  .check-desc { font-size: 12px; color: #6b7280; line-height: 1.6; margin-bottom: 8px; }
+  .check-output { font-size: 11px; font-family: monospace; padding: 6px 9px; border-radius: 6px; line-height: 1.8; }
+  .tag { border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 500; }
+
+  .ck-ruff { background: #fff7ed; border-color: #fed7aa; }
+  .ck-ruff .check-num { color: #c2410c; }
+  .ck-ruff .check-output { background: #ffedd5; color: #c2410c; }
+  .ck-pytest { background: #f0fdf4; border-color: #bbf7d0; }
+  .ck-pytest .check-num { color: #15803d; }
+  .ck-pytest .check-output { background: #dcfce7; color: #166534; }
+  .ck-llm { background: #faf5ff; border-color: #e9d5ff; }
+  .ck-llm .check-num { color: #7c3aed; }
+  .ck-llm .check-output { background: #ede9fe; color: #5b21b6; }
+  .ck-ui { background: #eff6ff; border-color: #bfdbfe; }
+  .ck-ui .check-num { color: #1d4ed8; }
+  .ck-ui .check-output { background: #dbeafe; color: #1e40af; }
+
+  /* 条件边示意 */
+  .cond-edge {
+    background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px;
+    padding: 18px; margin: 14px 0; text-align: center;
+  }
+  .ce-row { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+  .ce-node { border-radius: 9px; padding: 8px 16px; font-size: 12px; font-weight: 700; border: 1.5px solid transparent; }
+  .ce-arrow { font-size: 14px; color: #9ca3af; }
+  .ce-label { font-size: 11px; color: #9ca3af; background: #f1f5f9; border-radius: 5px; padding: 2px 7px; }
+  .cn-val { background: #fce7f3; border-color: #f9a8d4; color: #9d174d; }
+  .cn-done { background: #dcfce7; border-color: #86efac; color: #166534; }
+  .cn-fix { background: #ffedd5; border-color: #fdba74; color: #c2410c; }
+  .cn-expert { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+
+  /* 迭代计数保护 */
+  .iter-track { display: flex; gap: 8px; align-items: flex-end; margin: 12px 0; flex-wrap: wrap; }
+  .iter-box { border-radius: 8px; padding: 8px 12px; text-align: center; min-width: 60px; }
+  .iter-num { font-size: 18px; font-weight: 800; font-family: monospace; }
+  .iter-label { font-size: 10px; color: #9ca3af; margin-top: 2px; }
+  .iter-pass { background: #dcfce7; border: 1.5px solid #86efac; }
+  .iter-pass .iter-num { color: #15803d; }
+  .iter-warn { background: #fef9c3; border: 1.5px solid #fde047; }
+  .iter-warn .iter-num { color: #a16207; }
+  .iter-danger { background: #fee2e2; border: 1.5px solid #fca5a5; }
+  .iter-danger .iter-num { color: #b91c1c; }
+  .iter-stop { background: #1e1e2e; border: 1.5px solid #6c7086; }
+  .iter-stop .iter-num { color: #f38ba8; }
+  .iter-stop .iter-label { color: #6c7086; }
+  .iter-arrow { color: #9ca3af; font-size: 18px; align-self: center; }
+
+  /* 代码块 */
+  .code-dark { background: #1e1e2e; border-radius: 12px; padding: 18px 20px; margin: 12px 0; font-family: 'Consolas','Menlo',monospace; font-size: 12px; line-height: 2; color: #cdd6f4; white-space: pre-wrap; }
+
+  /* 反馈写回示意 */
+  .feedback-flow { background: #1e1e2e; border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+  .feedback-flow h3 { font-size: 13px; font-weight: 700; color: #89b4fa; margin-bottom: 14px; }
+  .ff-step { display: flex; gap: 12px; margin-bottom: 12px; font-size: 12px; }
+  .ff-num { background: #313244; color: #89b4fa; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+  .ff-content { color: #cdd6f4; line-height: 1.7; }
+  .ff-code { background: #313244; border-radius: 6px; padding: 2px 7px; font-family: monospace; font-size: 11px; color: #a6e3a1; }
+  .ff-red { color: #f38ba8; font-weight: 600; }
+  .ff-green { color: #a6e3a1; font-weight: 600; }
+  .ff-orange { color: #fab387; font-weight: 600; }
+
+  /* 完整状态机 */
+  .state-machine {
+    background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px;
+    padding: 18px; margin-bottom: 16px;
+  }
+  .state-machine h3 { font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 14px; }
+  .sm-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .sm-node { border-radius: 8px; padding: 7px 13px; font-size: 12px; font-weight: 600; border: 1.5px solid transparent; white-space: nowrap; }
+  .sm-arrow { color: #9ca3af; font-size: 16px; }
+  .sm-note { font-size: 11px; color: #9ca3af; }
+  .sn-cmd { background: #e0e7ff; border-color: #c7d2fe; color: #4338ca; }
+  .sn-exp { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+  .sn-val { background: #fce7f3; border-color: #f9a8d4; color: #9d174d; }
+  .sn-done { background: #dcfce7; border-color: #86efac; color: #166534; }
+  .sn-loop { background: #fef9c3; border-color: #fde047; color: #a16207; }
+
+  .footer { text-align: center; font-size: 11px; color: #bbb; margin-top: 28px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+  .footer a { color: #6366f1; text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .check-grid { grid-template-columns: 1fr; }
+    .iter-track { gap: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <div class="page-header">
+    <div class="nav-links">
+      <a class="nav-link" href="系统架构.html">← 总架构图</a>
+      <a class="nav-link" href="指挥官层.html">③ 指挥官</a>
+      <a class="nav-link" href="专家池.html">④ 专家池</a>
+      <a class="nav-link" href="技能层.html">⑤ 技能层</a>
+    </div>
+    <h1>⑥ 验证者 Agent · 闭环修复</h1>
+    <p>不满意就打回重做——让整个系统从「一次性生成」变成「持续改进」。</p>
+  </div>
+
+  <!-- 它是干什么的 -->
+  <div class="card">
+    <h2>🏭 类比：工厂质检员</h2>
+    <p>专家池就像流水线工人，写完代码放到传送带上。验证者像质检员站在出口：<strong>合格的放行，不合格的贴上问题标签打回去重做</strong>，最多返工 5 次，还不行就标「尽力而为」出厂。</p>
+    <p>没有验证者，AI 写出的代码哪怕有 bug 也直接交付。有了验证者，系统才有「自我纠错」能力。</p>
+  </div>
+
+  <!-- 四项检查 -->
+  <div class="card">
+    <h2>🔍 验证者做四项检查</h2>
+    <div class="check-grid">
+
+      <div class="check-card ck-ruff">
+        <div class="check-num">① 代码质量</div>
+        <div class="check-title">ruff 静态检查</div>
+        <div class="check-desc">自动扫描代码：语法错误、未使用变量、命名不规范……比 pylint 快 10 倍，秒出结果。</div>
+        <div class="check-output">E501 line too long (92 > 88)
+F401 'os' imported but unused
+→ 2 errors found</div>
+      </div>
+
+      <div class="check-card ck-pytest">
+        <div class="check-num">② 功能正确性</div>
+        <div class="check-title">pytest 测试结果</div>
+        <div class="check-desc">读取 TestExpert 已经跑完的测试结果，看有没有 failed。不是重新跑，是读现成结论。</div>
+        <div class="check-output">test_create_todo  PASSED ✅
+test_delete_todo  FAILED ❌
+→ 1 failed, 1 passed</div>
+      </div>
+
+      <div class="check-card ck-llm">
+        <div class="check-num">③ 验收标准对比</div>
+        <div class="check-title">LLM 逐条核对</div>
+        <div class="check-desc">Commander 最初定了验收标准（比如「支持添加、完成、删除」），LLM 逐条检查代码里有没有实现。</div>
+        <div class="check-output">✅ 添加任务 — 已实现
+✅ 完成任务 — 已实现
+❌ 删除任务 — 函数不存在</div>
+      </div>
+
+      <div class="check-card ck-ui">
+        <div class="check-num">④ 界面验证</div>
+        <div class="check-title">截图结果读取</div>
+        <div class="check-desc">读取 UIValidator 的截图检查结论，确认「添加按钮」「任务列表」等 UI 元素存在。</div>
+        <div class="check-output">✅ add-button 存在
+✅ todo-list 存在
+❌ delete-button 未找到</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 条件边 -->
+  <div class="card">
+    <h2>🚦 核心机制：条件边（Conditional Edge）</h2>
+    <p>LangGraph 里，验证者的输出决定下一步去哪——这就叫<strong>条件边</strong>。普通边是固定的「A → B」，条件边是「A → B 或 C，取决于结果」。</p>
+
+    <div class="cond-edge">
+      <div class="ce-row">
+        <div class="ce-node cn-val">Validator 检查</div>
+      </div>
+      <div class="ce-row">
+        <div class="ce-node cn-done">✅ 全部通过</div>
+        <div class="ce-arrow">·</div>
+        <div class="ce-node cn-fix">❌ 有问题 &amp; 轮次 &lt; 5</div>
+        <div class="ce-arrow">·</div>
+        <div class="ce-node cn-fix" style="background:#fee2e2;border-color:#fca5a5;color:#b91c1c">⛔ 轮次 = 5</div>
+      </div>
+      <div class="ce-row">
+        <div class="ce-node cn-done" style="font-size:11px">→ 完成，推送到前端</div>
+        <div style="width:30px"></div>
+        <div class="ce-node cn-expert">→ 打回 Expert 修复</div>
+        <div style="width:30px"></div>
+        <div class="ce-node cn-done" style="background:#f1f5f9;border-color:#e2e8f0;color:#64748b;font-size:11px">→ 强制结束（尽力而为）</div>
+      </div>
+    </div>
+
+    <div class="code-dark"><span style="color:#6c7086"># LangGraph 条件边的实际代码</span>
+<span style="color:#89b4fa">def</span> <span style="color:#cba6f7">should_continue</span>(state: ProjectState) -> str:
+    result = state[<span style="color:#a6e3a1">"validation_result"</span>]
+
+    <span style="color:#6c7086"># 超过 5 轮强制结束，不管通没通过</span>
+    <span style="color:#89b4fa">if</span> state[<span style="color:#a6e3a1">"iteration_count"</span>] >= <span style="color:#fab387">5</span>:
+        <span style="color:#89b4fa">return</span> <span style="color:#a6e3a1">"done"</span>
+
+    <span style="color:#6c7086"># 四项全通过 → 完成</span>
+    <span style="color:#89b4fa">if</span> result.all_passed:
+        <span style="color:#89b4fa">return</span> <span style="color:#a6e3a1">"done"</span>
+
+    <span style="color:#6c7086"># 有问题 → 打回修复</span>
+    <span style="color:#89b4fa">return</span> <span style="color:#a6e3a1">"fix"</span>
+
+<span style="color:#6c7086"># 在 StateGraph 里注册条件边</span>
+graph.add_conditional_edges(
+    <span style="color:#a6e3a1">"validator"</span>,          <span style="color:#6c7086"># 从这个节点出发</span>
+    should_continue,       <span style="color:#6c7086"># 用这个函数判断</span>
+    {
+        <span style="color:#a6e3a1">"done"</span>: END,          <span style="color:#6c7086"># "done" → 结束</span>
+        <span style="color:#a6e3a1">"fix"</span>: <span style="color:#a6e3a1">"fix_expert"</span>,  <span style="color:#6c7086"># "fix"  → 去修复节点</span>
+    }
+)</div>
+  </div>
+
+  <!-- 迭代保护 -->
+  <div class="card">
+    <h2>🛡️ 循环保护：最多 5 轮</h2>
+    <p>AI 修了一遍，可能还是有问题，再修，再检查……如果没有上限，这个循环永远不会停。<code style="font-size:12px;background:#f1f5f9;padding:1px 5px;border-radius:4px">iteration_count</code> 就是计数器，超过 5 强制结束。</p>
+    <div class="iter-track">
+      <div class="iter-box iter-pass"><div class="iter-num">1</div><div class="iter-label">第1轮</div></div>
+      <div class="iter-arrow">→</div>
+      <div class="iter-box iter-pass"><div class="iter-num">2</div><div class="iter-label">第2轮</div></div>
+      <div class="iter-arrow">→</div>
+      <div class="iter-box iter-warn"><div class="iter-num">3</div><div class="iter-label">第3轮</div></div>
+      <div class="iter-arrow">→</div>
+      <div class="iter-box iter-danger"><div class="iter-num">4</div><div class="iter-label">第4轮</div></div>
+      <div class="iter-arrow">→</div>
+      <div class="iter-box iter-danger"><div class="iter-num">5</div><div class="iter-label">第5轮</div></div>
+      <div class="iter-arrow">→</div>
+      <div class="iter-box iter-stop"><div class="iter-num">⛔</div><div class="iter-label">强制结束</div></div>
+    </div>
+    <p style="margin-top:4px;font-size:12px;color:#6b7280">第 5 轮结束后无论结果如何都标记完成，把「已完成但有已知问题」的状态推送给前端，让用户知道哪里还有问题。</p>
+  </div>
+
+  <!-- 反馈写回流程 -->
+  <div class="feedback-flow">
+    <h3>⚙️ 一次完整的「检查 → 打回 → 修复」流程</h3>
+    <div class="ff-step">
+      <div class="ff-num">1</div>
+      <div class="ff-content">专家池完成代码，写入 ProjectState。Validator 开始四项检查。</div>
+    </div>
+    <div class="ff-step">
+      <div class="ff-num">2</div>
+      <div class="ff-content"><span class="ff-red">发现问题</span>：ruff 报告 F401 未使用变量；pytest 有 1 个 failed；LLM 发现「删除任务」函数缺失。</div>
+    </div>
+    <div class="ff-step">
+      <div class="ff-num">3</div>
+      <div class="ff-content">Validator 把问题汇总，写入 <span class="ff-code">state["fix_feedback"]</span>：<br>
+        <span style="font-family:monospace;font-size:11px;color:#a6e3a1">「删除函数缺失；test_delete_todo 失败；未使用变量 os」</span>
+      </div>
+    </div>
+    <div class="ff-step">
+      <div class="ff-num">4</div>
+      <div class="ff-content">条件边判断 → <span class="ff-orange">返回 "fix"</span> → LangGraph 路由到 fix_expert 节点。<br>
+        <span style="font-size:11px;color:#6c7086">iteration_count 从 1 变成 2。</span>
+      </div>
+    </div>
+    <div class="ff-step">
+      <div class="ff-num">5</div>
+      <div class="ff-content">BackendExpert 读取 <span class="ff-code">fix_feedback</span>，<strong>带着问题描述重新生成</strong>，补上删除函数，删掉未用变量。</div>
+    </div>
+    <div class="ff-step">
+      <div class="ff-num">6</div>
+      <div class="ff-content"><span class="ff-green">Validator 第二轮检查</span>：四项全通过 → 条件边返回 "done" → 推送结果到前端 ✅</div>
+    </div>
+  </div>
+
+  <!-- 完整状态机 -->
+  <div class="state-machine">
+    <h3>🗺️ 完整闭环状态机</h3>
+    <div class="sm-row">
+      <div class="sm-node sn-cmd">Commander</div>
+      <div class="sm-arrow">→</div>
+      <div class="sm-node sn-exp">专家池（并行）</div>
+      <div class="sm-arrow">→</div>
+      <div class="sm-node sn-val">Validator</div>
+    </div>
+    <div class="sm-row" style="margin-left:60px">
+      <div class="sm-arrow">↙</div>
+      <div class="sm-note">通过 → END</div>
+      <div style="margin-left:20px"></div>
+      <div class="sm-arrow">↘</div>
+      <div class="sm-note">不通过（iter &lt; 5）→ 打回修复</div>
+    </div>
+    <div class="sm-row" style="margin-left:100px;margin-top:4px">
+      <div class="sm-node sn-done">✅ 完成</div>
+      <div style="width:60px"></div>
+      <div class="sm-node sn-loop">修复节点</div>
+      <div class="sm-arrow">→</div>
+      <div class="sm-node sn-val">Validator（再检）</div>
+    </div>
+    <div class="sm-row" style="margin-left:100px;margin-top:4px">
+      <div style="width:60px"></div>
+      <div style="font-size:11px;color:#9ca3af;margin-left:60px">iter = 5 → 强制 END</div>
+    </div>
+  </div>
+
+  <!-- Mermaid 状态机 -->
+  <div class="card" style="overflow:hidden">
+    <h2>🗺️ 闭环状态机（Mermaid）</h2>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">注意：这里有回路（循环边），不是严格的 DAG，而是有向图。Validator 不通过会触发循环，最多 5 次。</p>
+    <div class="mermaid">
+graph TD
+    CMD["Commander"] --> EXP["专家池 并行执行"]
+    EXP --> VAL{"Validator 检查"}
+    VAL -->|"✅ 全部通过"| DONE["END · 完成"]
+    VAL -->|"❌ iter ≥ 5"| FORCE["END · 强制结束"]
+    VAL -->|"❌ iter < 5"| FIX["打回 Expert 修复"]
+    FIX -->|"iteration_count +1"| VAL
+
+    style CMD fill:#e0e7ff,stroke:#c7d2fe,color:#4338ca
+    style EXP fill:#fff7ed,stroke:#fed7aa,color:#c2410c
+    style VAL fill:#fce7f3,stroke:#f9a8d4,color:#9d174d
+    style DONE fill:#dcfce7,stroke:#86efac,color:#166534
+    style FORCE fill:#f1f5f9,stroke:#e2e8f0,color:#64748b
+    style FIX fill:#fef9c3,stroke:#fde047,color:#a16207
+    </div>
+  </div>
+
+  <div class="footer">
+    多角色 Agent 协作平台 · 实训项目 #21 &nbsp;|&nbsp;
+    <a href="系统架构.html">← 总架构图</a> &nbsp;|&nbsp;
+    <a href="专家池.html">④ 专家池</a> &nbsp;|&nbsp;
+    <a href="技能层.html">⑤ 技能层</a>
+  </div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});</script>
+</body>
+</html>

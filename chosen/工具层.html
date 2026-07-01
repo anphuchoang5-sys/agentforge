@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⑦⑧ 工具层 + 可观测层</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f0f2f5;
+    color: #1a1a1a;
+    padding: 32px 20px;
+    min-height: 100vh;
+  }
+  .page-wrapper { max-width: 860px; margin: 0 auto; }
+
+  .page-header { text-align: center; margin-bottom: 28px; }
+  .page-header h1 { font-size: 20px; font-weight: 700; }
+  .page-header p { font-size: 13px; color: #888; margin-top: 6px; }
+  .nav-links { display: flex; justify-content: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .nav-link { font-size: 12px; color: #6366f1; text-decoration: none; padding: 4px 12px; background: #eef2ff; border-radius: 20px; }
+  .nav-link:hover { background: #e0e7ff; }
+
+  .card { background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; padding: 20px 24px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card h3 { font-size: 13px; font-weight: 700; margin: 14px 0 8px; color: #374151; }
+  .card p { font-size: 13px; line-height: 1.8; color: #374151; margin-bottom: 10px; }
+
+  /* MCP 服务器列表 */
+  .mcp-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+  .mcp-item { display: grid; grid-template-columns: 180px 1fr auto; gap: 12px; align-items: center;
+    background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; }
+  .mcp-name { font-size: 12px; font-weight: 700; font-family: monospace; color: #334155; }
+  .mcp-desc { font-size: 12px; color: #6b7280; line-height: 1.5; }
+  .mcp-badge { font-size: 11px; border-radius: 5px; padding: 2px 8px; white-space: nowrap; font-weight: 600; }
+  .badge-official { background: #dbeafe; color: #1d4ed8; }
+  .badge-custom  { background: #fef9c3; color: #a16207; }
+
+  /* LLM 对比 */
+  .llm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0; }
+  .llm-card { border-radius: 12px; padding: 16px; border: 1.5px solid transparent; }
+  .llm-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .llm-desc { font-size: 12px; line-height: 1.7; color: #374151; margin-bottom: 10px; }
+  .llm-models { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .llm-model { display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding: 5px 9px; border-radius: 6px; }
+  .tag { border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 500; }
+
+  .lc-cloud { background: #eff6ff; border-color: #bfdbfe; }
+  .lc-cloud .llm-title { color: #1d4ed8; }
+  .lc-cloud .llm-model { background: #dbeafe; color: #1e40af; }
+  .lc-cloud .tag { background: #bfdbfe; color: #1d4ed8; }
+  .lc-local { background: #f0fdf4; border-color: #bbf7d0; }
+  .lc-local .llm-title { color: #15803d; }
+  .lc-local .llm-model { background: #dcfce7; color: #166534; }
+  .lc-local .tag { background: #bbf7d0; color: #15803d; }
+
+  /* 模型分工 */
+  .model-assign { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+  .ma-row { display: flex; align-items: center; gap: 10px; font-size: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; }
+  .ma-agent { font-weight: 700; min-width: 130px; color: #374151; }
+  .ma-model { font-family: monospace; font-size: 11px; background: #e2e8f0; padding: 2px 8px; border-radius: 5px; color: #475569; }
+  .ma-reason { color: #9ca3af; font-size: 11px; }
+
+  /* 可观测三件套 */
+  .obs-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin: 12px 0; }
+  .obs-card { border-radius: 12px; padding: 14px; border: 1.5px solid transparent; }
+  .obs-title { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+  .obs-sub { font-size: 11px; color: #9ca3af; margin-bottom: 8px; }
+  .obs-desc { font-size: 12px; line-height: 1.6; color: #374151; margin-bottom: 8px; }
+  .obs-example { font-size: 11px; font-family: monospace; padding: 6px 9px; border-radius: 6px; line-height: 1.8; }
+
+  .oc-otel { background: #fff7ed; border-color: #fed7aa; }
+  .oc-otel .obs-title { color: #c2410c; }
+  .oc-otel .obs-example { background: #ffedd5; color: #c2410c; }
+  .oc-jaeger { background: #eff6ff; border-color: #bfdbfe; }
+  .oc-jaeger .obs-title { color: #1d4ed8; }
+  .oc-jaeger .obs-example { background: #dbeafe; color: #1e40af; }
+  .oc-langsmith { background: #faf5ff; border-color: #e9d5ff; }
+  .oc-langsmith .obs-title { color: #7c3aed; }
+  .oc-langsmith .obs-example { background: #ede9fe; color: #5b21b6; }
+
+  /* 代码块 */
+  .code-dark { background: #1e1e2e; border-radius: 12px; padding: 16px 18px; margin: 12px 0;
+    font-family: 'Consolas','Menlo',monospace; font-size: 12px; line-height: 2; color: #cdd6f4; white-space: pre-wrap; }
+
+  /* USB 类比 */
+  .usb-analogy { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  .usb-box { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 14px; }
+  .usb-box h4 { font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 8px; }
+  .usb-box p { font-size: 12px; color: #6b7280; line-height: 1.6; }
+
+  .gh-link { font-size: 11px; text-decoration: none; border-radius: 5px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
+
+  .mermaid { margin: 8px 0; }
+
+  .footer { text-align: center; font-size: 11px; color: #bbb; margin-top: 28px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+  .footer a { color: #6366f1; text-decoration: none; }
+
+  @media (max-width: 620px) {
+    .llm-grid, .obs-grid, .usb-analogy { grid-template-columns: 1fr; }
+    .mcp-item { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <div class="page-header">
+    <div class="nav-links">
+      <a class="nav-link" href="系统架构.html">← 总架构图</a>
+      <a class="nav-link" href="指挥官层.html">③ 指挥官</a>
+      <a class="nav-link" href="专家池.html">④ 专家池</a>
+      <a class="nav-link" href="验证者.html">⑥ 验证者</a>
+    </div>
+    <h1>⑦⑧ 工具层 + 可观测层</h1>
+    <p>Agent 调用工具的标准接口（MCP）· 驱动 Agent 的 AI 模型 · 看清系统发生了什么（可观测性）</p>
+  </div>
+
+  <!-- MCP 协议 -->
+  <div class="card">
+    <h2>🔌 MCP 协议 — Agent 的 USB 标准
+      <a class="gh-link" href="https://github.com/modelcontextprotocol/servers" target="_blank" style="background:#e2e8f0;color:#475569">↗ MCP Servers · ⭐12k+</a>
+    </h2>
+    <p>Agent 需要操作文件、运行命令、控制浏览器——不同工具接口各不相同，整合起来很乱。MCP（Model Context Protocol）就像 <strong>USB 接口标准</strong>：只要工具实现了 MCP，Agent 就能以同样方式调用任何工具。</p>
+
+    <div class="usb-analogy">
+      <div class="usb-box">
+        <h4>没有 MCP（以前）</h4>
+        <p>每个工具有自己的 API 格式，Agent 要写 5 套不同的调用代码，新增工具就要改 Agent 代码。</p>
+      </div>
+      <div class="usb-box">
+        <h4>有了 MCP（现在）</h4>
+        <p>所有工具都说同一种语言，Agent 只需要一套调用方式。新增工具就像插 USB，即插即用。</p>
+      </div>
+    </div>
+
+    <h3>本项目用到的 5 个 MCP Server</h3>
+    <div class="mcp-list">
+      <div class="mcp-item">
+        <div class="mcp-name">server-filesystem</div>
+        <div class="mcp-desc">读写本地文件。Agent 生成的代码通过它落盘，也用它读已有文件来做修复。</div>
+        <span class="mcp-badge badge-official">官方</span>
+      </div>
+      <div class="mcp-item">
+        <div class="mcp-name">server-git</div>
+        <div class="mcp-desc">Git 版本控制。每轮生成的代码自动 commit，可以看到修复前后的 diff。</div>
+        <span class="mcp-badge badge-official">官方</span>
+      </div>
+      <div class="mcp-item">
+        <div class="mcp-name">server-sqlite</div>
+        <div class="mcp-desc">数据库操作演示。BackendExpert 用它创建表、插入数据，前端演示看得到真实数据。</div>
+        <span class="mcp-badge badge-official">官方</span>
+      </div>
+      <div class="mcp-item">
+        <div class="mcp-name">@playwright/mcp</div>
+        <div class="mcp-desc">Web UI 自动化。UIValidator 用它打开浏览器、点击按钮、截图，验证前端界面正确。</div>
+        <span class="mcp-badge badge-official">官方</span>
+      </div>
+      <div class="mcp-item">
+        <div class="mcp-name">desktop-control（自研）</div>
+        <div class="mcp-desc">封装 pywinauto，控制 Windows 原生窗口。当生成的是 Tkinter / PyQt 桌面应用时使用。</div>
+        <span class="mcp-badge badge-custom">自研</span>
+      </div>
+    </div>
+
+    <div class="code-dark"><span style="color:#6c7086"># Agent 调用 MCP 工具的方式（统一接口）</span>
+<span style="color:#89b4fa">from</span> langchain_mcp_adapters.tools <span style="color:#89b4fa">import</span> load_mcp_tools
+
+<span style="color:#6c7086"># 加载所有 MCP 工具，变成 LangChain 标准 Tool 对象</span>
+tools = <span style="color:#89b4fa">await</span> load_mcp_tools(session)
+
+<span style="color:#6c7086"># Agent 调用文件写入（filesystem MCP）</span>
+write_file(path=<span style="color:#a6e3a1">"todo_db.py"</span>, content=generated_code)
+
+<span style="color:#6c7086"># Agent 调用浏览器截图（playwright MCP）</span>
+screenshot(url=<span style="color:#a6e3a1">"http://localhost:3000"</span>, path=<span style="color:#a6e3a1">"result.png"</span>)
+
+<span style="color:#6c7086"># ↑ 两个调用形式完全一样，Agent 不需要关心底层实现</span></div>
+
+    <div class="card" style="overflow:hidden;margin-top:12px;border:none;padding:0">
+      <h3 style="margin-top:0">🗺️ MCP 工具调用流程（Mermaid）</h3>
+      <div class="mermaid">
+graph LR
+    EXP["Expert Agent"] -->|"tool_call(name, args)"| CLIENT["MCP Client<br/>langchain-mcp-adapters"]
+    CLIENT -->|"JSON-RPC"| FS["server-filesystem<br/>读写文件"]
+    CLIENT -->|"JSON-RPC"| GIT["server-git<br/>版本控制"]
+    CLIENT -->|"JSON-RPC"| PW["playwright/mcp<br/>UI 自动化"]
+    CLIENT -->|"JSON-RPC"| DC["desktop-control<br/>桌面窗口控制"]
+
+    style EXP fill:#fff7ed,stroke:#fed7aa,color:#c2410c
+    style CLIENT fill:#f1f5f9,stroke:#cbd5e1,color:#475569
+    style FS fill:#dcfce7,stroke:#86efac,color:#166534
+    style GIT fill:#dbeafe,stroke:#93c5fd,color:#1d4ed8
+    style PW fill:#ede9fe,stroke:#d8b4fe,color:#7c3aed
+    style DC fill:#fef9c3,stroke:#fde047,color:#a16207
+      </div>
+    </div>
+  </div>
+
+  <!-- LLM 层 -->
+  <div class="card">
+    <h2>🤖 AI 模型层 — 云 API 为主，Ollama 兜底
+      <a class="gh-link" href="https://github.com/ollama/ollama" target="_blank" style="background:#dcfce7;color:#166534">↗ Ollama · ⭐100k+</a>
+    </h2>
+    <p>本项目<strong>主要使用云端 API</strong>（DeepSeek / Claude / OpenAI），速度快、效果好、不需要本地 GPU；Ollama 作为离线兜底方案，网络不可用时切换。</p>
+
+    <div class="llm-grid">
+      <div class="llm-card lc-cloud">
+        <div class="llm-title">☁️ 云端 API（主力）</div>
+        <div class="llm-desc">有网就用，最快最稳。Commander 用推理强的模型，Expert 用代码专用模型。</div>
+        <div class="llm-models">
+          <div class="llm-model">DeepSeek-V3 <span style="opacity:.6">Commander 规划</span></div>
+          <div class="llm-model">Claude Haiku <span style="opacity:.6">Commander 备选</span></div>
+          <div class="llm-model">DeepSeek-Coder <span style="opacity:.6">Expert 代码生成</span></div>
+        </div>
+        <div class="tag">需要联网</div>
+        <div class="tag" style="margin-left:4px">按 Token 计费</div>
+      </div>
+      <div class="llm-card lc-local">
+        <div class="llm-title">💻 Ollama 本地（兜底）</div>
+        <div class="llm-desc">无需联网，数据不出本机。速度较慢（7B 约 10-30s/次），显存至少 6GB。</div>
+        <div class="llm-models">
+          <div class="llm-model">qwen2.5:14b <span style="opacity:.6">Commander 规划</span></div>
+          <div class="llm-model">qwen2.5-coder:7b <span style="opacity:.6">Expert 代码生成</span></div>
+          <div class="llm-model">qwen2.5:7b <span style="opacity:.6">mem0 内部 LLM</span></div>
+        </div>
+        <div class="tag">无需联网</div>
+        <div class="tag" style="margin-left:4px">中文友好</div>
+      </div>
+    </div>
+
+    <h3>不同 Agent 用不同模型——为什么？</h3>
+    <div class="model-assign">
+      <div class="ma-row">
+        <span class="ma-agent">🎯 Commander</span>
+        <span class="ma-model">DeepSeek-V3 / qwen2.5:14b</span>
+        <span class="ma-reason">需要推理能力强，理解需求、拆任务、做判断</span>
+      </div>
+      <div class="ma-row">
+        <span class="ma-agent">🗄️ BackendExpert</span>
+        <span class="ma-model">DeepSeek-Coder / qwen2.5-coder:7b</span>
+        <span class="ma-reason">纯代码生成，专用代码模型更准</span>
+      </div>
+      <div class="ma-row">
+        <span class="ma-agent">🖥️ FrontendExpert</span>
+        <span class="ma-model">DeepSeek-Coder / qwen2.5-coder:7b</span>
+        <span class="ma-reason">同上，UI 代码生成</span>
+      </div>
+      <div class="ma-row">
+        <span class="ma-agent">🧪 TestExpert</span>
+        <span class="ma-model">DeepSeek-Coder / qwen2.5-coder:7b</span>
+        <span class="ma-reason">测试代码生成，逻辑相对简单</span>
+      </div>
+      <div class="ma-row">
+        <span class="ma-agent">🔍 Validator</span>
+        <span class="ma-model">DeepSeek-V3 / qwen2.5:14b</span>
+        <span class="ma-reason">需要理解验收标准并对比，推理要求高</span>
+      </div>
+      <div class="ma-row">
+        <span class="ma-agent">🧠 mem0 内部</span>
+        <span class="ma-model">qwen2.5:7b（Ollama）</span>
+        <span class="ma-reason">纯本地运行，提炼记忆不需要最强模型</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 可观测层 -->
+  <div class="card">
+    <h2>📡 可观测层 — 看清 Agent 在做什么</h2>
+    <p>Agent 系统出问题很难 debug：哪个节点卡住了？哪次 LLM 调用耗时最长？Token 烧了多少？可观测层回答这三个问题。</p>
+
+    <div class="obs-grid">
+      <div class="obs-card oc-otel">
+        <div class="obs-title">OpenTelemetry
+          <a class="gh-link" href="https://github.com/open-telemetry/opentelemetry-python" target="_blank" style="background:#ffedd5;color:#c2410c;font-size:10px">↗ SDK</a>
+        </div>
+        <div class="obs-sub">分布式追踪埋点标准</div>
+        <div class="obs-desc">在代码里埋点，记录「谁调用了谁、花了多少时间、成功还是失败」。不负责展示，只负责采集。</div>
+        <div class="obs-example">类比：在每通电话里
+装一个录音机</div>
+      </div>
+      <div class="obs-card oc-jaeger">
+        <div class="obs-title">Jaeger
+          <a class="gh-link" href="https://github.com/jaegertracing/jaeger" target="_blank" style="background:#dbeafe;color:#1d4ed8;font-size:10px">↗ ⭐20k+</a>
+        </div>
+        <div class="obs-sub">链路追踪可视化 UI</div>
+        <div class="obs-desc">接收 OpenTelemetry 发来的追踪数据，画成时间轴图。一眼看出哪个节点慢、哪里报错。</div>
+        <div class="obs-example">类比：把录音整理成
+通话记录时间轴</div>
+      </div>
+      <div class="obs-card oc-langsmith">
+        <div class="obs-title">LangSmith
+          <a class="gh-link" href="https://smith.langchain.com" target="_blank" style="background:#ede9fe;color:#7c3aed;font-size:10px">↗ SaaS</a>
+        </div>
+        <div class="obs-sub">LLM 专项追踪</div>
+        <div class="obs-desc">专门记录每次 LLM 调用：发了什么 Prompt、AI 回了什么、用了多少 Token、花了多少时间。</div>
+        <div class="obs-example">类比：专门记录「对
+AI 说了什么、AI 答了啥」</div>
+      </div>
+    </div>
+
+    <h3>三者分工</h3>
+    <div class="code-dark"><span style="color:#6c7086"># OpenTelemetry 埋点（写在代码里，自动采集）</span>
+<span style="color:#89b4fa">with</span> tracer.start_as_current_span(<span style="color:#a6e3a1">"commander.decompose"</span>) <span style="color:#89b4fa">as</span> span:
+    result = commander.run(requirement)
+    span.set_attribute(<span style="color:#a6e3a1">"task_count"</span>, len(result.tasks))
+<span style="color:#6c7086"># ↑ 这段数据会自动发给 Jaeger，在 UI 里显示成时间轴</span>
+
+<span style="color:#6c7086"># LangSmith 自动追踪（只需配置环境变量）</span>
+LANGCHAIN_TRACING_V2=<span style="color:#a6e3a1">"true"</span>
+LANGCHAIN_API_KEY=<span style="color:#a6e3a1">"ls_..."</span>
+<span style="color:#6c7086"># ↑ 之后所有 LangChain/LangGraph 的 LLM 调用自动上报到 LangSmith</span></div>
+
+    <div class="card" style="overflow:hidden;margin-top:12px;border:none;padding:0">
+      <h3 style="margin-top:0">🗺️ 可观测数据流（Mermaid）</h3>
+      <div class="mermaid">
+graph LR
+    AG["Agent 执行"] -->|"Span 数据"| OT["OpenTelemetry SDK<br/>埋点采集"]
+    OT -->|"OTLP 协议"| JA["Jaeger<br/>链路可视化"]
+    AG -->|"LLM 调用"| LS["LangSmith<br/>Prompt/Token 追踪"]
+    JA --> DEV["开发者看到：<br/>哪个节点慢 / 哪里报错"]
+    LS --> DEV2["开发者看到：<br/>Prompt 内容 / Token 消耗"]
+
+    style AG fill:#fff7ed,stroke:#fed7aa,color:#c2410c
+    style OT fill:#ffedd5,stroke:#fdba74,color:#c2410c
+    style JA fill:#dbeafe,stroke:#93c5fd,color:#1d4ed8
+    style LS fill:#ede9fe,stroke:#d8b4fe,color:#7c3aed
+    style DEV fill:#dcfce7,stroke:#86efac,color:#166534
+    style DEV2 fill:#dcfce7,stroke:#86efac,color:#166534
+      </div>
+    </div>
+  </div>
+
+  <!-- 全栈汇总 -->
+  <div class="card" style="background:#1e1e2e;border-color:#313244">
+    <h2 style="color:#cba6f7">🎉 八层架构全部到齐</h2>
+    <p style="color:#6c7086;font-size:12px;margin-bottom:12px">一句话需求 → 完整运行的应用，全程 Agent 自动完成</p>
+    <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;font-family:monospace">
+      <div style="color:#89b4fa">① 用户交互层  React + TypeScript + xterm.js — 可视化控制台</div>
+      <div style="color:#89dceb">② API 层      FastAPI + WebSocket — 前后端实时通信</div>
+      <div style="color:#cba6f7">③ 指挥官层    LangGraph Commander — 需求拆解 + 接口规范</div>
+      <div style="color:#a6e3a1">④ 专家 Agent 池 Backend / Frontend / Test / UIValidator — 并行执行</div>
+      <div style="color:#94e2d5">⑤ Skills 技能层  /spec /plan /build /test /review /ship — 三层渐进加载</div>
+      <div style="color:#fab387">⑥ 验证者 Agent  ruff + pytest + LLM — 条件边闭环，最多 5 轮</div>
+      <div style="color:#f9e2af">⑦ 工具生态层   MCP (filesystem/git/playwright) + Ollama/云 API</div>
+      <div style="color:#a6adc8">⑧ 可观测层     OpenTelemetry + Jaeger + LangSmith — 看清每一步</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    多角色 Agent 协作平台 · 实训项目 #21 &nbsp;|&nbsp;
+    <a href="系统架构.html">← 总架构图</a> &nbsp;|&nbsp;
+    <a href="验证者.html">⑥ 验证者</a>
+  </div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});</script>
+</body>
+</html>

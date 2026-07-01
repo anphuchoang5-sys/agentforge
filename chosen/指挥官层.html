@@ -146,6 +146,7 @@
       <a class="nav-link" href="系统架构.html">← 总架构图</a>
       <a class="nav-link" href="前端.html">① 用户交互层</a>
       <a class="nav-link" href="api.html">② API 层</a>
+      <a class="nav-link" href="技能层.html">⑤ 技能层</a>
     </div>
     <h1>③ 指挥官层 · LangGraph + Commander Agent</h1>
     <p>整个系统的大脑：把一句话需求拆解成任务、调度 Expert Agent、管理记忆。</p>
@@ -215,6 +216,8 @@
         <span class="tag">Qwen2.5:14b</span>
         <span class="tag">接口优先设计</span>
         <span class="tag">Backend ‖ Frontend</span>
+        <span class="tag" style="background:#e0e7ff;color:#3730a3;font-weight:700">Skills: /spec</span>
+        <span class="tag" style="background:#e0e7ff;color:#3730a3;font-weight:700">Skills: /plan</span>
       </div>
     </div>
 
@@ -391,13 +394,44 @@ memory.add(task_summary, user_id="user_1")</div>
     </div>
   </div>
 
+  <!-- Mermaid DAG -->
+  <div class="card" style="overflow:hidden">
+    <h2>🗺️ 任务依赖图（Mermaid）</h2>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">接口优先设计下的完整 DAG：Commander 生成规范后，三路并行展开，UIValidator 等 Frontend 完成后才截图。</p>
+    <div class="mermaid">
+graph TD
+    CMD["🎯 Commander<br/>/spec → /plan"] --> SPEC["📋 接口规范<br/>ProjectState"]
+    SPEC --> BACK["🗄️ BackendExpert<br/>/build · 实现接口"]
+    SPEC --> FRONT["🖥️ FrontendExpert<br/>/build · 调用接口"]
+    SPEC --> TEST["🧪 TestExpert<br/>/test · 按规范测试"]
+    FRONT --> UIV["📸 UIValidator<br/>/test · 截图验证"]
+    BACK --> VAL["🔍 Validator<br/>ruff + LLM 质检"]
+    FRONT --> VAL
+    TEST --> VAL
+    UIV --> VAL
+    VAL --> DONE["✅ 完成 END"]
+
+    style CMD fill:#e0e7ff,stroke:#c7d2fe,color:#4338ca
+    style SPEC fill:#f1f5f9,stroke:#cbd5e1,color:#475569
+    style BACK fill:#ffedd5,stroke:#fed7aa,color:#c2410c
+    style FRONT fill:#dbeafe,stroke:#bfdbfe,color:#1d4ed8
+    style TEST fill:#dcfce7,stroke:#bbf7d0,color:#166534
+    style UIV fill:#ede9fe,stroke:#e9d5ff,color:#7c3aed
+    style VAL fill:#fce7f3,stroke:#f9a8d4,color:#9d174d
+    style DONE fill:#dcfce7,stroke:#86efac,color:#166534
+    </div>
+  </div>
+
   <div class="footer">
     多角色 Agent 协作平台 · 实训项目 #21 &nbsp;|&nbsp;
     <a href="系统架构.html">← 总架构图</a> &nbsp;|&nbsp;
     <a href="前端.html">① 用户交互层</a> &nbsp;|&nbsp;
-    <a href="api.html">② API 层</a>
+    <a href="api.html">② API 层</a> &nbsp;|&nbsp;
+    <a href="技能层.html">⑤ 技能层</a>
   </div>
 
 </div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});</script>
 </body>
 </html>
