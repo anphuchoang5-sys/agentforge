@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>③ 指挥官层 · LangGraph + Commander Agent</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f0f2f5;
+    color: #1a1a1a;
+    padding: 32px 20px;
+    min-height: 100vh;
+  }
+  .page-wrapper { max-width: 860px; margin: 0 auto; }
+
+  .page-header { text-align: center; margin-bottom: 28px; }
+  .page-header h1 { font-size: 20px; font-weight: 700; }
+  .page-header p { font-size: 13px; color: #888; margin-top: 6px; }
+  .nav-links { display: flex; justify-content: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .nav-link { font-size: 12px; color: #6366f1; text-decoration: none; padding: 4px 12px; background: #eef2ff; border-radius: 20px; }
+  .nav-link:hover { background: #e0e7ff; }
+
+  .card { background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; padding: 20px 24px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card p { font-size: 13px; line-height: 1.8; color: #374151; margin-bottom: 10px; }
+  .card p:last-child { margin-bottom: 0; }
+
+  /* LangGraph 概念 */
+  .graph-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0; }
+  .graph-box { border-radius: 10px; padding: 14px; border: 1.5px solid transparent; }
+  .graph-box h4 { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+  .graph-box pre { font-size: 12px; font-family: 'Consolas','Menlo',monospace; line-height: 2; white-space: pre-wrap; }
+  .g-normal { background: #f8fafc; border-color: #e2e8f0; }
+  .g-normal h4 { color: #64748b; }
+  .g-lang { background: #faf5ff; border-color: #e9d5ff; }
+  .g-lang h4 { color: #7c3aed; }
+  .g-lang pre { color: #5b21b6; }
+
+  /* StateGraph 示意 */
+  .state-diagram {
+    background: #1e1e2e; border-radius: 12px; padding: 18px 20px; margin: 12px 0;
+    font-family: 'Consolas','Menlo',monospace; font-size: 12px; line-height: 2;
+    color: #cdd6f4;
+  }
+
+  /* 四个方块 */
+  .comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+  .comp-card { border-radius: 12px; padding: 16px; border: 1.5px solid transparent; }
+  .comp-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .comp-icon { width: 36px; height: 36px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .comp-title { font-size: 14px; font-weight: 700; }
+  .comp-sub { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+  .comp-desc { font-size: 12px; line-height: 1.7; color: #374151; margin-bottom: 10px; }
+  .code-block { border-radius: 7px; padding: 10px 12px; font-size: 11px; font-family: 'Consolas','Menlo',monospace; line-height: 1.9; margin-bottom: 10px; white-space: pre-wrap; }
+  .tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag { border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 500; }
+  .gh-badge { display: inline-block; font-size: 11px; text-decoration: none; border-radius: 5px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
+
+  /* 意图拆解 — 紫 */
+  .c-intent { background: #faf5ff; border-color: #e9d5ff; }
+  .c-intent .comp-icon { background: #ede9fe; }
+  .c-intent .code-block { background: #ede9fe; color: #5b21b6; }
+  .c-intent .tag { background: #e9d5ff; color: #7c3aed; }
+  .c-intent .gh-badge { background: #e9d5ff; color: #7c3aed; }
+
+  /* 任务调度 — 蓝 */
+  .c-queue { background: #eff6ff; border-color: #bfdbfe; }
+  .c-queue .comp-icon { background: #dbeafe; }
+  .c-queue .code-block { background: #dbeafe; color: #1e40af; }
+  .c-queue .tag { background: #bfdbfe; color: #1d4ed8; }
+
+  /* 审计与反思 — 橙 */
+  .c-audit { background: #fff7ed; border-color: #fed7aa; }
+  .c-audit .comp-icon { background: #ffedd5; }
+  .c-audit .code-block { background: #ffedd5; color: #c2410c; }
+  .c-audit .tag { background: #fed7aa; color: #c2410c; }
+
+  /* 记忆管理 — 绿 */
+  .c-mem { background: #f0fdf4; border-color: #bbf7d0; }
+  .c-mem .comp-icon { background: #dcfce7; }
+  .c-mem .code-block { background: #dcfce7; color: #166534; }
+  .c-mem .tag { background: #bbf7d0; color: #15803d; }
+  .c-mem .gh-badge { background: #bbf7d0; color: #15803d; }
+
+  /* DAG 图示 */
+  .dag-vis {
+    background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px;
+    padding: 18px; margin: 12px 0; text-align: center;
+  }
+  .dag-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 6px 0; flex-wrap: wrap; }
+  .dag-node {
+    border-radius: 8px; padding: 8px 14px; font-size: 12px; font-weight: 600;
+    border: 1.5px solid transparent; white-space: nowrap;
+  }
+  .dag-arrow { color: #9ca3af; font-size: 18px; }
+  .dag-parallel { display: flex; flex-direction: column; gap: 6px; }
+  .dn-user { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+  .dn-cmd { background: #faf5ff; border-color: #c4b5fd; color: #7c3aed; }
+  .dn-back { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+  .dn-front { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+  .dn-test { background: #fdf4ff; border-color: #e9d5ff; color: #9333ea; }
+  .dn-ui { background: #fff1f2; border-color: #fecdd3; color: #be123c; }
+  .dag-label { font-size: 11px; color: #9ca3af; margin: 4px 0 8px; }
+  .dag-bracket { font-size: 20px; color: #9ca3af; }
+
+  /* MemorySaver 存档示意 */
+  .save-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+  .save-node { border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+  .save-arrow { color: #9ca3af; }
+  .save-icon { font-size: 16px; }
+  .sn-done { background: #dcfce7; color: #15803d; border: 1.5px solid #bbf7d0; }
+  .sn-save { background: #ffedd5; color: #c2410c; font-size: 11px; border: 1px dashed #fed7aa; border-radius: 6px; padding: 4px 8px; }
+  .sn-crash { background: #ffe4e6; color: #be123c; border: 1.5px solid #fecdd3; }
+
+  /* 记忆对比表 */
+  .mem-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 10px 0; }
+  .mem-table th { background: #f1f5f9; padding: 9px 12px; text-align: left; font-weight: 700; color: #475569; border-bottom: 2px solid #e2e8f0; }
+  .mem-table td { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; color: #374151; vertical-align: top; }
+  .mem-table tr:last-child td { border-bottom: none; }
+
+  /* 完整流程 */
+  .flow-dark { background: #1e1e2e; color: #cdd6f4; border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+  .flow-dark h3 { font-size: 13px; font-weight: 700; color: #89b4fa; margin-bottom: 14px; }
+  .flow-step { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; font-size: 12px; line-height: 1.7; }
+  .flow-num { background: #313244; color: #89b4fa; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+  .hl-purple { color: #cba6f7; font-weight: 600; }
+  .hl-green { color: #a6e3a1; font-weight: 600; }
+  .hl-orange { color: #fab387; font-weight: 600; }
+  .hl-blue { color: #89b4fa; font-weight: 600; }
+
+  .footer { text-align: center; font-size: 11px; color: #bbb; margin-top: 28px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+  .footer a { color: #6366f1; text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .comp-grid, .graph-compare { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <div class="page-header">
+    <div class="nav-links">
+      <a class="nav-link" href="系统架构.html">← 总架构图</a>
+      <a class="nav-link" href="前端.html">① 用户交互层</a>
+      <a class="nav-link" href="api.html">② API 层</a>
+    </div>
+    <h1>③ 指挥官层 · LangGraph + Commander Agent</h1>
+    <p>整个系统的大脑：把一句话需求拆解成任务、调度 Expert Agent、管理记忆。</p>
+  </div>
+
+  <!-- LangGraph 是什么 -->
+  <div class="card">
+    <h2>🧠 先搞懂：LangGraph 是什么</h2>
+    <p>普通代码是线性的，但 AI Agent 需要「判断 + 循环」：写完代码要检查，不通过要重写，通过了才结束。LangGraph 让你把这种流程画成图。</p>
+    <div class="graph-compare">
+      <div class="graph-box g-normal">
+        <h4>普通代码（线性）</h4>
+        <pre>第1步 → 第2步 → 第3步 → 完成
+
+不能回头，不能循环</pre>
+      </div>
+      <div class="graph-box g-lang">
+        <h4>LangGraph（有条件、可循环）</h4>
+        <pre>分析 → 写代码 → 检查
+              ↑          ↓ 通过 → 完成
+              └── 修复 ←─┘ 不通过</pre>
+      </div>
+    </div>
+    <p>每个格子叫 <strong>Node（节点）</strong>，箭头叫 <strong>Edge（边）</strong>，带条件的箭头叫<strong>条件边</strong>。所有节点共享一份数据叫 <strong>State（状态）</strong>。</p>
+    <div class="state-diagram">
+<span style="color:#89b4fa">class</span> <span style="color:#cba6f7">ProjectState</span>(TypedDict):
+    requirement:      <span style="color:#a6e3a1">str</span>          <span style="color:#6c7086"># 你输入的需求</span>
+    task_list:        <span style="color:#a6e3a1">list</span>         <span style="color:#6c7086"># 拆解后的任务列表</span>
+    generated_files:  <span style="color:#a6e3a1">dict</span>         <span style="color:#6c7086"># 已生成的代码文件</span>
+    iteration_count:  <span style="color:#a6e3a1">int</span>          <span style="color:#6c7086"># 当前第几轮修复</span>
+    validation_result:<span style="color:#a6e3a1">Optional</span>     <span style="color:#6c7086"># 最新验证结果</span>
+    <span style="color:#6c7086"># ↑ 所有 Agent 共享这份数据，像一块大白板</span>
+    </div>
+  </div>
+
+  <!-- 四个方块 -->
+  <div class="comp-grid">
+
+    <!-- 意图拆解引擎 -->
+    <div class="comp-card c-intent">
+      <div class="comp-header">
+        <div class="comp-icon">🧩</div>
+        <div>
+          <div class="comp-title">
+            意图拆解引擎
+            <a class="gh-badge" href="https://github.com/langchain-ai/langgraph" target="_blank">↗ LangGraph</a>
+          </div>
+          <div class="comp-sub">需求 → DAG 任务图 · Commander Agent</div>
+        </div>
+      </div>
+      <div class="comp-desc">你输入一句话，Commander 用 Qwen2.5:14b 分析语义。采用<strong>接口优先设计</strong>：先生成接口规范（函数名/参数/返回值），再分配任务——让 Backend 和 Frontend 能真正并行开发。</div>
+      <div class="code-block">输入：「开发一个待办事项应用」
+           ↓ Qwen2.5:14b 分析
+
+第一步：生成接口规范（存入 ProjectState）
+  create_todo(title: str) → int
+  get_all_todos() → List[Todo]
+  delete_todo(id: int) → bool
+  Todo = &#123; id: int, title: str, done: bool &#125;
+
+第二步：分配任务（所有人都读同一份规范）
+  task_1: BackendExpert  → 实现上述函数  ┐ 并行
+  task_2: FrontendExpert → 调用上述函数  ┘ 开始
+  task_3: TestExpert     → 按规范写测试  → 并行开始
+  task_4: UIValidator    → 截图验证      → 等 Frontend 完成</div>
+      <div class="tag-row">
+        <span class="tag">Qwen2.5:14b</span>
+        <span class="tag">接口优先设计</span>
+        <span class="tag">Backend ‖ Frontend</span>
+      </div>
+    </div>
+
+    <!-- 任务调度器 -->
+    <div class="comp-card c-queue">
+      <div class="comp-header">
+        <div class="comp-icon">🚀</div>
+        <div>
+          <div class="comp-title">任务调度器</div>
+          <div class="comp-sub">DAG 编排 + 依赖管理 · asyncio.Queue</div>
+        </div>
+      </div>
+      <div class="comp-desc">接收拆解好的任务图，按依赖顺序把任务发给对应的 Expert Agent。没有依赖的任务可以同时并发执行，节省时间。</div>
+
+      <!-- DAG 可视化 -->
+      <div class="dag-vis">
+        <div class="dag-row">
+          <div class="dag-node dn-cmd" style="background:#e0e7ff;border-color:#c7d2fe;color:#4338ca">Commander · /spec</div>
+        </div>
+        <div class="dag-label">↓ 生成接口规范后，三个同时开始</div>
+        <div class="dag-row">
+          <div class="dag-bracket">{</div>
+          <div class="dag-parallel">
+            <div class="dag-node dn-back">BackendExpert ✅ 并行</div>
+            <div class="dag-node dn-front">FrontendExpert ✅ 并行</div>
+            <div class="dag-node dn-test">TestExpert ✅ 并行</div>
+          </div>
+        </div>
+        <div class="dag-label">↓ Frontend 完成后</div>
+        <div class="dag-row">
+          <div class="dag-node dn-ui">UIValidator（截图）</div>
+        </div>
+      </div>
+
+      <div class="code-block">queue = asyncio.Queue()
+
+# 没有依赖 → 直接放入队列
+await queue.put(task_backend)
+
+# 有依赖 → 等依赖完成后再放入
+await backend_done.wait()
+await queue.put(task_frontend)
+await queue.put(task_test)</div>
+      <div class="tag-row">
+        <span class="tag">并发执行</span>
+        <span class="tag">依赖等待</span>
+        <span class="tag">单机无需 Redis</span>
+      </div>
+    </div>
+
+    <!-- 审计与反思 -->
+    <div class="comp-card c-audit">
+      <div class="comp-header">
+        <div class="comp-icon">🔍</div>
+        <div>
+          <div class="comp-title">审计与反思</div>
+          <div class="comp-sub">输出验证 + 自动纠错 · MemorySaver 断点续跑</div>
+        </div>
+      </div>
+      <div class="comp-desc">Expert 完成任务后，这里检查输出是否符合要求。同时 MemorySaver 在每步后自动存档，就像游戏存档，崩溃了从断点继续，不用重来。</div>
+
+      <div class="save-row">
+        <div class="save-node sn-done">Commander 完成</div>
+        <span class="save-icon">💾</span>
+        <div class="save-node sn-save">存档点</div>
+        <span class="save-arrow">→</span>
+        <div class="save-node sn-done">Backend 完成</div>
+        <span class="save-icon">💾</span>
+        <div class="save-node sn-save">存档点</div>
+        <span class="save-arrow">→</span>
+        <div class="save-node sn-crash">💥 崩溃</div>
+      </div>
+      <div style="font-size:11px;color:#c2410c;margin:4px 0 10px;padding:6px 10px;background:#ffedd5;border-radius:6px">↑ 从「Backend 完成」的存档点恢复，不用重新拆解需求</div>
+
+      <div class="code-block">def should_continue(state) -> str:
+    if state["validation_result"].passed:
+        return "done"           # 通过 → 结束
+    if state["iteration_count"] >= 5:
+        return "done"           # 超5轮 → 强制结束
+    return "fix"                # 不通过 → 打回修复</div>
+      <div class="tag-row">
+        <span class="tag">断点续跑</span>
+        <span class="tag">条件边</span>
+        <span class="tag">最多5轮</span>
+      </div>
+    </div>
+
+    <!-- 记忆管理 -->
+    <div class="comp-card c-mem">
+      <div class="comp-header">
+        <div class="comp-icon">🧠</div>
+        <div>
+          <div class="comp-title">
+            记忆管理
+            <a class="gh-badge" href="https://github.com/mem0ai/mem0" target="_blank">↗ mem0 · ⭐25k+</a>
+          </div>
+          <div class="comp-sub">mem0 + ChromaDB + SQLite · 跨会话上下文</div>
+        </div>
+      </div>
+      <div class="comp-desc">
+        mem0 内部自带一个 <strong>LLM（本项目用 Ollama）</strong>，专门负责判断哪些内容值得长期记住。存储分两处：ChromaDB 存向量（语义搜索用），SQLite 存对话流水账（写入时分析用）。
+      </div>
+
+      <!-- 内部LLM干三件事 -->
+      <div style="background:#dcfce7;border-radius:7px;padding:10px 12px;font-size:11px;line-height:1.9;margin-bottom:10px;font-family:monospace;color:#166534">
+传入：「用了SQLite，第二轮通过，文件名todo_db.py，开始时间14:32」
+        ↓ mem0 内部 LLM（Ollama）分析
+① 提炼：「项目偏好 SQLite」✅  「文件名/时间」❌ 没意义
+② 去重：已有「用户喜欢简洁界面」→ 新内容不重复 → 保留
+③ 存入：转向量 → ChromaDB；流水账 → SQLite</div>
+
+      <table class="mem-table">
+        <tr><th>类型</th><th>存在哪</th><th>重启后</th><th>记什么</th></tr>
+        <tr>
+          <td>会话内</td>
+          <td>MemorySaver<br><span style="color:#9ca3af;font-size:10px">RAM</span></td>
+          <td style="color:#ef4444">❌ 丢失</td>
+          <td>每步执行的中间状态</td>
+        </tr>
+        <tr>
+          <td>跨会话</td>
+          <td>ChromaDB + SQLite<br><span style="color:#9ca3af;font-size:10px">磁盘文件</span></td>
+          <td style="color:#16a34a">✅ 保留</td>
+          <td>用户偏好、历史规律</td>
+        </tr>
+      </table>
+
+      <div class="code-block"># 本项目配置：mem0 内部 LLM 用 Ollama 本地模型
+config = {
+    "llm": {
+        "provider": "ollama",
+        "config": { "model": "qwen2.5:7b" }
+    },
+    "vector_store": {
+        "provider": "chroma",  # 向量存 ChromaDB
+    }
+}
+memory = Memory.from_config(config)
+
+# 任务完成后触发，mem0 自动提炼+去重+存入
+memory.add(task_summary, user_id="user_1")</div>
+      <div class="tag-row">
+        <span class="tag">内置 LLM 提炼</span>
+        <span class="tag">自动去重合并</span>
+        <span class="tag">Ollama 本地运行</span>
+        <span class="tag">向量语义搜索</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 完整流程 -->
+  <div class="flow-dark">
+    <h3>⚙️ 四个组件的完整配合流程</h3>
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div style="color:#cdd6f4">你输入「开发待办事项 App」→ <span class="hl-purple">意图拆解引擎</span> 调取 mem0 历史偏好，用 Qwen2.5:14b 生成 DAG 任务图</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">2</div>
+      <div style="color:#cdd6f4"><span class="hl-blue">任务调度器</span> 把任务放入 asyncio.Queue，BackendExpert 先跑，完成后 FrontendExpert / TestExpert / UIValidator 并发开始</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">3</div>
+      <div style="color:#cdd6f4">每个 Expert 完成一步，<span class="hl-orange">审计与反思</span>的 MemorySaver 自动存一个档，同时检查输出格式</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">4</div>
+      <div style="color:#cdd6f4">所有 Expert 完成后，Validator 检查质量 → 不通过：条件边指回修复节点，最多 5 轮 → 通过：推送结果到前端</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">5</div>
+      <div style="color:#cdd6f4">任务结束，<span class="hl-green">记忆管理</span> 把这次任务的结论存入 mem0，下次任务 Commander 更懂你</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    多角色 Agent 协作平台 · 实训项目 #21 &nbsp;|&nbsp;
+    <a href="系统架构.html">← 总架构图</a> &nbsp;|&nbsp;
+    <a href="前端.html">① 用户交互层</a> &nbsp;|&nbsp;
+    <a href="api.html">② API 层</a>
+  </div>
+
+</div>
+</body>
+</html>

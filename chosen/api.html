@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>② API 层 · FastAPI + WebSocket + Pydantic + SQLite</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f0f2f5;
+    color: #1a1a1a;
+    padding: 32px 20px;
+    min-height: 100vh;
+  }
+
+  .page-wrapper { max-width: 860px; margin: 0 auto; }
+
+  .page-header { text-align: center; margin-bottom: 28px; }
+  .page-header h1 { font-size: 20px; font-weight: 700; }
+  .page-header p { font-size: 13px; color: #888; margin-top: 6px; }
+  .nav-links { display: flex; justify-content: center; gap: 10px; margin-bottom: 16px; }
+  .nav-link {
+    font-size: 12px; color: #6366f1; text-decoration: none;
+    padding: 4px 12px; background: #eef2ff; border-radius: 20px;
+  }
+  .nav-link:hover { background: #e0e7ff; }
+
+  /* 概念讲解区 */
+  .concept-box {
+    background: #fff;
+    border-radius: 14px;
+    border: 1.5px solid #e5e7eb;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+  .concept-box h2 {
+    font-size: 15px; font-weight: 700; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .concept-box p { font-size: 13px; line-height: 1.8; color: #374151; margin-bottom: 10px; }
+  .concept-box p:last-child { margin-bottom: 0; }
+
+  /* 餐厅比喻 */
+  .restaurant-diagram {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: center;
+    gap: 8px;
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 16px;
+    margin: 12px 0;
+    text-align: center;
+  }
+  .rest-node {
+    background: #fff;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px 8px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .rest-node .icon { font-size: 24px; display: block; margin-bottom: 4px; }
+  .rest-node .name { font-weight: 700; }
+  .rest-node .sub { color: #9ca3af; font-size: 11px; }
+  .rest-arrow { color: #9ca3af; font-size: 20px; }
+
+  /* REST vs WebSocket 对比 */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 12px 0;
+  }
+  .compare-card {
+    border-radius: 10px;
+    padding: 14px;
+    border: 1.5px solid transparent;
+  }
+  .compare-card h3 { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .compare-card .emoji { font-size: 20px; margin-right: 6px; }
+  .compare-card pre {
+    font-size: 11px;
+    font-family: 'Consolas','Menlo',monospace;
+    line-height: 1.9;
+    border-radius: 7px;
+    padding: 10px;
+    white-space: pre-wrap;
+  }
+  .c-rest { background: #eff6ff; border-color: #bfdbfe; }
+  .c-rest pre { background: #dbeafe; color: #1e40af; }
+  .c-ws { background: #f0fdf4; border-color: #bbf7d0; }
+  .c-ws pre { background: #dcfce7; color: #166534; }
+
+  /* 四个组件卡片 */
+  .section-title {
+    font-size: 12px; font-weight: 600; color: #9ca3af;
+    text-transform: uppercase; letter-spacing: .08em;
+    margin: 24px 0 12px;
+  }
+  .four-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  .comp-card {
+    border-radius: 12px;
+    padding: 16px;
+    border: 1.5px solid transparent;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+  .comp-card:hover { filter: brightness(.97); }
+  .comp-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .comp-icon {
+    width: 36px; height: 36px; border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .comp-title { font-size: 14px; font-weight: 700; }
+  .comp-sub { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+  .comp-desc { font-size: 12px; line-height: 1.7; color: #374151; margin-bottom: 10px; }
+  .code-block {
+    border-radius: 7px; padding: 10px 12px;
+    font-size: 11px; font-family: 'Consolas','Menlo',monospace;
+    line-height: 1.9; margin-bottom: 10px; white-space: pre-wrap;
+  }
+  .tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag { border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 500; }
+  .gh-badge {
+    display: inline-block; font-size: 11px; text-decoration: none;
+    border-radius: 5px; padding: 1px 7px; margin-left: 6px; vertical-align: middle;
+  }
+
+  /* FastAPI — 绿 */
+  .c-fastapi { background: #f0fdf4; border-color: #bbf7d0; }
+  .c-fastapi .comp-icon { background: #dcfce7; }
+  .c-fastapi .code-block { background: #dcfce7; color: #166534; }
+  .c-fastapi .tag { background: #bbf7d0; color: #15803d; }
+  .c-fastapi .gh-badge { background: #bbf7d0; color: #15803d; }
+
+  /* WebSocket — 蓝 */
+  .c-wscard { background: #eff6ff; border-color: #bfdbfe; }
+  .c-wscard .comp-icon { background: #dbeafe; }
+  .c-wscard .code-block { background: #dbeafe; color: #1e40af; }
+  .c-wscard .tag { background: #bfdbfe; color: #1d4ed8; }
+  .c-wscard .gh-badge { background: #bfdbfe; color: #1d4ed8; }
+  .c-wscard .comp-desc { color: #374151; }
+
+  /* Pydantic — 紫 */
+  .c-pydantic { background: #faf5ff; border-color: #e9d5ff; }
+  .c-pydantic .comp-icon { background: #ede9fe; }
+  .c-pydantic .code-block { background: #ede9fe; color: #5b21b6; }
+  .c-pydantic .tag { background: #e9d5ff; color: #7c3aed; }
+  .c-pydantic .gh-badge { background: #e9d5ff; color: #7c3aed; }
+
+  /* SQLite — 橙 */
+  .c-sqlite { background: #fff7ed; border-color: #fed7aa; }
+  .c-sqlite .comp-icon { background: #ffedd5; }
+  .c-sqlite .code-block { background: #ffedd5; color: #c2410c; }
+  .c-sqlite .tag { background: #fed7aa; color: #c2410c; }
+  .c-sqlite .gh-badge { background: #fed7aa; color: #c2410c; }
+
+  /* 数据流总结 */
+  .flow-summary {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  .flow-summary h3 { font-size: 13px; font-weight: 700; margin-bottom: 12px; color: #89b4fa; }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .flow-num {
+    background: #313244;
+    color: #89b4fa;
+    border-radius: 50%;
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .flow-text { color: #cdd6f4; }
+  .flow-text .highlight { color: #a6e3a1; font-weight: 600; }
+  .flow-text .tool { color: #fab387; }
+
+  .footer {
+    text-align: center; font-size: 11px; color: #bbb;
+    margin-top: 28px; padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+  }
+  .footer a { color: #6366f1; text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .four-grid { grid-template-columns: 1fr; }
+    .compare-grid { grid-template-columns: 1fr; }
+    .restaurant-diagram { grid-template-columns: 1fr; }
+    .rest-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <!-- 页头 -->
+  <div class="page-header">
+    <div class="nav-links">
+      <a class="nav-link" href="系统架构.html">← 总架构图</a>
+      <a class="nav-link" href="前端.html">① 用户交互层</a>
+    </div>
+    <h1>② API 层 · FastAPI + WebSocket + Pydantic + SQLite</h1>
+    <p>前端和后端之间的「通信管道」，以及数据格式检查和任务存储。</p>
+  </div>
+
+  <!-- 先搞懂 API 是什么 -->
+  <div class="concept-box">
+    <h2>🍽️ 先搞懂：API 到底是什么？</h2>
+    <p>API（应用程序接口）就是<strong>双方约定好的沟通规则</strong>。它和「AI 订阅」没有任何关系——只要两个程序需要互相传数据，它们之间就有 API。</p>
+    <p>最好懂的比喻：把系统想象成一家餐厅——</p>
+    <div class="restaurant-diagram">
+      <div class="rest-node">
+        <span class="icon">🧑</span>
+        <span class="name">你（前端）</span>
+        <span class="sub">浏览器里的网页</span>
+      </div>
+      <span class="rest-arrow">⇄</span>
+      <div class="rest-node">
+        <span class="icon">👨‍💼</span>
+        <span class="name">服务员（API）</span>
+        <span class="sub">FastAPI 接口层</span>
+      </div>
+      <span class="rest-arrow">⇄</span>
+      <div class="rest-node">
+        <span class="icon">👨‍🍳</span>
+        <span class="name">厨房（后端/AI）</span>
+        <span class="sub">LangGraph + Ollama</span>
+      </div>
+    </div>
+    <p>你不能直接冲进厨房（前端不能直接操作数据库或调用 AI），只能对着菜单点菜（调用 API 的固定地址）。API 负责把你的请求传进去、把结果传出来。</p>
+  </div>
+
+  <!-- REST vs WebSocket -->
+  <div class="concept-box">
+    <h2>📡 两种通信方式：REST 和 WebSocket</h2>
+    <p>这个项目同时用了两种方式，各有用途：</p>
+    <div class="compare-grid">
+      <div class="compare-card c-rest">
+        <h3><span class="emoji">✉️</span>REST API — 像发短信</h3>
+        <p style="font-size:12px;color:#374151;margin-bottom:8px">你发一条，它回一条，这次对话就结束了。适合「提交任务」「查询结果」这类一问一答的场景。</p>
+        <pre>前端：POST /api/tasks
+       { "需求": "做待办App" }
+
+后端：{ "task_id": "task_001",
+       "status": "started" }
+
+↑ 完事，这次连接关闭</pre>
+      </div>
+      <div class="compare-card c-ws">
+        <h3><span class="emoji">📞</span>WebSocket — 像打电话</h3>
+        <p style="font-size:12px;color:#374151;margin-bottom:8px">连接建立后一直保持，后端随时可以主动推消息给前端。适合「AI 干活过程中实时显示进度」。</p>
+        <pre>前端：连接 /ws/tasks/task_001
+
+后端：「Commander 开始分析了」
+后端：「BackendExpert 写代码中」
+后端：「第1轮验证不通过，修复」
+后端：「✅ 完成！代码已生成」
+
+↑ 前端从没主动问过一次</pre>
+      </div>
+    </div>
+    <p style="font-size:12px;color:#6b7280;margin-top:4px">xterm.js 实时滚动日志、流程图节点变色，都是靠 WebSocket 推过来的。</p>
+  </div>
+
+  <!-- 四个组件 -->
+  <div class="section-title">· 这一层的 4 个组件 ·</div>
+  <div class="four-grid">
+
+    <!-- FastAPI -->
+    <a class="comp-card c-fastapi" href="https://github.com/fastapi/fastapi" target="_blank">
+      <div class="comp-header">
+        <div class="comp-icon">⚡</div>
+        <div>
+          <div class="comp-title">FastAPI <span class="gh-badge">↗ GitHub · ⭐80k+</span></div>
+          <div class="comp-sub">Python 后端框架，提供 REST 接口</div>
+        </div>
+      </div>
+      <div class="comp-desc">
+        Python 里最快的 Web 框架，原生支持异步（不会因为等 AI 响应而卡死）。自动生成接口文档，开发时可以直接在浏览器里测试每个接口。
+      </div>
+      <div class="code-block">POST  /api/tasks       ← 提交新需求
+GET   /api/tasks/{id}  ← 查询任务状态
+DELETE /api/tasks/{id} ← 停止任务
+GET   /api/agents      ← 查看所有 Agent</div>
+      <div class="tag-row">
+        <span class="tag">原生异步</span>
+        <span class="tag">自动生成文档</span>
+        <span class="tag">内置 Pydantic</span>
+      </div>
+    </a>
+
+    <!-- WebSocket -->
+    <div class="comp-card c-wscard">
+      <div class="comp-header">
+        <div class="comp-icon">🔌</div>
+        <div>
+          <div class="comp-title">WebSocket</div>
+          <div class="comp-sub">实时双向通信，FastAPI 内置支持</div>
+        </div>
+      </div>
+      <div class="comp-desc">
+        建立一条「一直开着的管道」。AI 每完成一个步骤，后端立刻通过这条管道把消息推给前端——不需要前端不停地问「好了没」。
+      </div>
+      <div class="code-block">连接地址：ws://localhost:8000/ws/tasks/task_001
+
+后端每步推送一条 JSON：
+{
+  "agent": "BackendExpert",
+  "status": "running",
+  "message": "正在生成 todo_db.py...",
+  "iteration": 1
+}</div>
+      <div class="tag-row">
+        <span class="tag">后端主动推送</span>
+        <span class="tag">零延迟更新</span>
+        <span class="tag">持久连接</span>
+      </div>
+    </div>
+
+    <!-- Pydantic -->
+    <a class="comp-card c-pydantic" href="https://github.com/pydantic/pydantic" target="_blank">
+      <div class="comp-header">
+        <div class="comp-icon">🔍</div>
+        <div>
+          <div class="comp-title">Pydantic v2 <span class="gh-badge">↗ GitHub · ⭐22k+</span></div>
+          <div class="comp-sub">数据格式检查员</div>
+        </div>
+      </div>
+      <div class="comp-desc">
+        规定数据必须长什么样，不符合格式直接报错拦截。对 Agent 系统特别重要——因为 LLM 有时会输出格式混乱的文本，Pydantic 帮你确保拿到的数据是可以程序化处理的。
+      </div>
+      <div class="code-block">class SubTask(BaseModel):
+    id: str            # 必须是字符串
+    type: str          # 必须是规定的类型
+    description: str   # 不能为空
+
+# AI 返回格式乱了 → 直接报错
+# 不让坏数据继续往下走 ✅</div>
+      <div class="tag-row">
+        <span class="tag">格式验证</span>
+        <span class="tag">Rust 实现超快</span>
+        <span class="tag">AI 结构化输出必备</span>
+      </div>
+    </a>
+
+    <!-- SQLAlchemy + SQLite -->
+    <a class="comp-card c-sqlite" href="https://github.com/sqlalchemy/sqlalchemy" target="_blank">
+      <div class="comp-header">
+        <div class="comp-icon">🗄️</div>
+        <div>
+          <div class="comp-title">SQLAlchemy + SQLite <span class="gh-badge">↗ GitHub</span></div>
+          <div class="comp-sub">任务历史记录存储</div>
+        </div>
+      </div>
+      <div class="comp-desc">
+        <strong>SQLite</strong> = 一个超轻量数据库，就是一个 .db 文件，不需要安装任何服务。<br>
+        <strong>SQLAlchemy</strong> = 让你用写 Python 的方式操作数据库，不用手写 SQL 语句。
+      </div>
+      <div class="code-block"># 不用写 SQL：SELECT * FROM tasks WHERE id='001'
+# 直接写 Python：
+task = session.query(Task).filter(
+    Task.id == 'task_001'
+).first()
+
+# 存：谁 / 什么时候 / 写了什么 / 迭代几轮</div>
+      <div class="tag-row">
+        <span class="tag">零配置</span>
+        <span class="tag">任务历史</span>
+        <span class="tag">Agent 状态记录</span>
+      </div>
+    </a>
+
+  </div>
+
+  <!-- 四者配合的数据流 -->
+  <div class="flow-summary">
+    <h3>⚙️ 四个组件怎么配合工作</h3>
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div class="flow-text">你在前端提交需求 → <span class="tool">FastAPI REST</span> 接收请求，给这个任务分配一个 ID</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">2</div>
+      <div class="flow-text"><span class="tool">Pydantic v2</span> 检查请求格式——描述不能为空、类型必须合法，不通过直接拒绝</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">3</div>
+      <div class="flow-text"><span class="tool">SQLite</span> 把任务记录存进数据库，哪怕服务器重启，历史记录还在</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">4</div>
+      <div class="flow-text">AI Agent 开始工作，每走一步就通过 <span class="tool">WebSocket</span> 把进度推给前端</div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">5</div>
+      <div class="flow-text">前端的 xterm.js 实时滚动、流程图节点实时变色 → <span class="highlight">你看到的全程直播效果就是这么来的</span></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    多角色 Agent 协作平台 · 实训项目 #21 &nbsp;|&nbsp;
+    <a href="architecture_diagram.html">← 返回总架构图</a> &nbsp;|&nbsp;
+    <a href="前端.html">① 用户交互层</a>
+  </div>
+
+</div>
+</body>
+</html>

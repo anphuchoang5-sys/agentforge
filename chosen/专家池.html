@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>④ 专家 Agent 池 · 四位工程师</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f0f2f5;
+    color: #1a1a1a;
+    padding: 32px 20px;
+    min-height: 100vh;
+  }
+  .page-wrapper { max-width: 860px; margin: 0 auto; }
+
+  .page-header { text-align: center; margin-bottom: 28px; }
+  .page-header h1 { font-size: 20px; font-weight: 700; }
+  .page-header p { font-size: 13px; color: #888; margin-top: 6px; }
+  .nav-links { display: flex; justify-content: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .nav-link { font-size: 12px; color: #6366f1; text-decoration: none; padding: 4px 12px; background: #eef2ff; border-radius: 20px; }
+  .nav-link:hover { background: #e0e7ff; }
+
+  .card { background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; padding: 20px 24px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card p { font-size: 13px; line-height: 1.8; color: #374151; margin-bottom: 10px; }
+
+  /* 本质说明 */
+  .essence-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+  .essence-row {
+    background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px;
+    padding: 12px 14px; font-size: 12px; font-family: monospace; line-height: 1.8;
+  }
+  .essence-row .name { font-weight: 700; color: #6366f1; font-size: 13px; margin-bottom: 4px; font-family: sans-serif; }
+
+  /* 四个专家卡片 */
+  .expert-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+  .expert-card { border-radius: 12px; padding: 16px; border: 1.5px solid transparent; }
+  .expert-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .expert-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+  .expert-title { font-size: 14px; font-weight: 700; }
+  .expert-sub { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+  .expert-desc { font-size: 12px; line-height: 1.7; color: #374151; margin-bottom: 10px; }
+  .steps { margin-bottom: 10px; }
+  .step { display: flex; gap: 8px; font-size: 12px; margin-bottom: 5px; align-items: flex-start; }
+  .step-num { background: rgba(0,0,0,.08); border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .step-text { line-height: 1.5; color: #374151; }
+  .code-block { border-radius: 7px; padding: 10px 12px; font-size: 11px; font-family: 'Consolas','Menlo',monospace; line-height: 1.9; margin-bottom: 10px; white-space: pre-wrap; }
+  .tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag { border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 500; }
+  .gh-badge { display: inline-block; font-size: 11px; text-decoration: none; border-radius: 5px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
+
+  /* BackendExpert — 橙 */
+  .c-back { background: #fff7ed; border-color: #fed7aa; }
+  .c-back .expert-icon { background: #ffedd5; }
+  .c-back .code-block { background: #ffedd5; color: #c2410c; }
+  .c-back .tag { background: #fed7aa; color: #c2410c; }
+  .c-back .step-num { background: #fed7aa; color: #c2410c; }
+
+  /* FrontendExpert — 蓝 */
+  .c-front { background: #eff6ff; border-color: #bfdbfe; }
+  .c-front .expert-icon { background: #dbeafe; }
+  .c-front .code-block { background: #dbeafe; color: #1e40af; }
+  .c-front .tag { background: #bfdbfe; color: #1d4ed8; }
+  .c-front .step-num { background: #bfdbfe; color: #1d4ed8; }
+
+  /* TestExpert — 绿 */
+  .c-test { background: #f0fdf4; border-color: #bbf7d0; }
+  .c-test .expert-icon { background: #dcfce7; }
+  .c-test .code-block { background: #dcfce7; color: #166534; }
+  .c-test .tag { background: #bbf7d0; color: #15803d; }
+  .c-test .step-num { background: #bbf7d0; color: #15803d; }
+
+  /* UIValidator — 紫 */
+  .c-ui { background: #faf5ff; border-color: #e9d5ff; }
+  .c-ui .expert-icon { background: #ede9fe; }
+  .c-ui .code-block { background: #ede9fe; color: #5b21b6; }
+  .c-ui .tag { background: #e9d5ff; color: #7c3aed; }
+  .c-ui .tag a { color: #7c3aed; text-decoration: none; }
+  .c-ui .step-num { background: #e9d5ff; color: #7c3aed; }
+  .c-ui .gh-badge { background: #e9d5ff; color: #7c3aed; }
+
+  /* ProjectState 白板 */
+  .state-board {
+    background: #1e1e2e; border-radius: 12px; padding: 18px 20px; margin: 12px 0;
+    font-family: 'Consolas','Menlo',monospace; font-size: 12px; line-height: 2; color: #cdd6f4;
+  }
+  .s-cmd { color: #89b4fa; }
+  .s-back { color: #fab387; }
+  .s-front { color: #89dceb; }
+  .s-test { color: #a6e3a1; }
+  .s-ui { color: #cba6f7; }
+  .s-comment { color: #6c7086; }
+
+  /* 时间轴 */
+  .timeline {
+    background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 16px;
+  }
+  .timeline h3 { font-size: 13px; font-weight: 700; margin-bottom: 14px; color: #374151; }
+  .tl-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12px; }
+  .tl-time { width: 44px; text-align: right; color: #9ca3af; font-family: monospace; flex-shrink: 0; }
+  .tl-bar {
+    height: 28px; border-radius: 6px; display: flex; align-items: center;
+    padding: 0 10px; font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+  .tl-note { font-size: 11px; color: #9ca3af; }
+  .bar-cmd { background: #e0e7ff; color: #4338ca; }
+  .bar-back { background: #ffedd5; color: #c2410c; width: 200px; }
+  .bar-front { background: #dbeafe; color: #1d4ed8; width: 140px; }
+  .bar-test { background: #dcfce7; color: #15803d; width: 120px; }
+  .bar-ui { background: #ede9fe; color: #7c3aed; width: 160px; }
+  .bar-val { background: #fce7f3; color: #9d174d; width: 100px; }
+  .tl-parallel { display: flex; flex-direction: column; gap: 6px; }
+
+  .footer { text-align: center; font-size: 11px; color: #bbb; margin-top: 28px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+  .footer a { color: #6366f1; text-decoration: none; }
+
+  @media (max-width: 620px) {
+    .expert-grid, .essence-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <div class="page-header">
+    <div class="nav-links">
+      <a class="nav-link" href="系统架构.html">← 总架构图</a>
+      <a class="nav-link" href="前端.html">① 前端</a>
+      <a class="nav-link" href="api.html">② API</a>
+      <a class="nav-link" href="指挥官层.html">③ 指挥官</a>
+    </div>
+    <h1>④ 专家 Agent 池 · 四位工程师</h1>
+    <p>真正动手写代码、跑测试、截图验证的执行层。</p>
+  </div>
+
+  <!-- 本质 -->
+  <div class="card">
+    <h2>🔩 四个专家的本质：Prompt + LLM + 工具</h2>
+    <p>每个 Expert 不是独立的程序，而是<strong>同一个 AI（Qwen2.5-Coder:7b）加上不同的「岗位说明书」</strong>。不同的只是系统 Prompt 和分配到的工具。</p>
+    <div class="essence-grid">
+      <div class="essence-row">
+        <div class="name">BackendExpert</div>
+        角色：「你是后端工程师」<br>
+        模型：Qwen2.5-Coder:7b<br>
+        工具：写文件 / 运行代码
+      </div>
+      <div class="essence-row">
+        <div class="name">FrontendExpert</div>
+        角色：「你是前端工程师」<br>
+        模型：Qwen2.5-Coder:7b<br>
+        工具：写文件
+      </div>
+      <div class="essence-row">
+        <div class="name">TestExpert</div>
+        角色：「你是测试工程师」<br>
+        模型：Qwen2.5-Coder:7b<br>
+        工具：写文件 / 运行 pytest
+      </div>
+      <div class="essence-row">
+        <div class="name">UIValidator</div>
+        角色：「你是UI验证工程师」<br>
+        模型：Qwen2.5-Coder:7b<br>
+        工具：Playwright 截图 / 点击
+      </div>
+    </div>
+  </div>
+
+  <!-- 四个专家详解 -->
+  <div class="expert-grid">
+
+    <!-- BackendExpert -->
+    <div class="expert-card c-back">
+      <div class="expert-header">
+        <div class="expert-icon">🗄️</div>
+        <div>
+          <div class="expert-title">BackendExpert</div>
+          <div class="expert-sub">后端工程师 · 数据库代码</div>
+        </div>
+      </div>
+      <div class="expert-desc">写让数据能存进去、取出来的代码。第一个跑，其他人都要等它完成才能开始。</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-text">收到任务：「写待办事项数据库，支持增删改查」</div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-text">AI 生成 Python + SQLite 代码</div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-text">调用「写文件」工具，存成 todo_db.py</div></div>
+        <div class="step"><div class="step-num">4</div><div class="step-text">运行一遍确认没语法错误</div></div>
+        <div class="step"><div class="step-num">5</div><div class="step-text">把文件内容写进 ProjectState，通知其他人可以开始了</div></div>
+      </div>
+      <div class="code-block"># AI 真实生成并存到磁盘的文件
+import sqlite3
+
+def create_todo(title: str):
+    conn = sqlite3.connect('todo.db')
+    conn.execute(
+        "INSERT INTO todos (title) VALUES (?)",
+        (title,)
+    )
+    conn.commit()</div>
+      <div class="tag-row">
+        <span class="tag">与 Frontend 并行 ✅</span>
+        <span class="tag">SQLite</span>
+        <span class="tag">按接口规范实现</span>
+      </div>
+    </div>
+
+    <!-- FrontendExpert -->
+    <div class="expert-card c-front">
+      <div class="expert-header">
+        <div class="expert-icon">🖥️</div>
+        <div>
+          <div class="expert-title">FrontendExpert</div>
+          <div class="expert-sub">前端工程师 · 界面代码</div>
+        </div>
+      </div>
+      <div class="expert-desc">写用户看得到的界面。采用<strong>接口优先设计</strong>，与 BackendExpert <strong>并行开发</strong>——两者都读 Commander 生成的接口规范，不需要等对方完成。</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-text">从 ProjectState 读取接口规范（函数名、参数、返回值）</div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-text">AI 生成 Tkinter 界面代码，按规范调用函数（Backend 还没写完也没关系）</div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-text">存成 todo_app.py</div></div>
+        <div class="step"><div class="step-num">4</div><div class="step-text">写进 ProjectState</div></div>
+      </div>
+      <div class="code-block"># 按接口规范调用，不依赖 Backend 的实现
+import tkinter as tk
+from todo_db import create_todo, get_all_todos
+# ↑ 函数名来自 Commander 生成的规范
+#   Backend 和 Frontend 都按这份规范走
+
+def on_add():
+    title = entry.get()
+    create_todo(title)
+    refresh_list()</div>
+      <div class="tag-row">
+        <span class="tag">与 Backend 并行 ✅</span>
+        <span class="tag">Tkinter</span>
+        <span class="tag">读接口规范</span>
+      </div>
+    </div>
+
+    <!-- TestExpert -->
+    <div class="expert-card c-test">
+      <div class="expert-header">
+        <div class="expert-icon">🧪</div>
+        <div>
+          <div class="expert-title">TestExpert</div>
+          <div class="expert-sub">测试工程师 · 自动化测试</div>
+        </div>
+      </div>
+      <div class="expert-desc">写自动化测试并真实运行，证明代码能用。测试结果直接影响 Validator 的判断。</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-text">从 ProjectState 读取 todo_db.py</div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-text">AI 生成覆盖增删改查的 pytest 测试</div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-text">存成 test_todo.py</div></div>
+        <div class="step"><div class="step-num">4</div><div class="step-text">真实运行 pytest，拿到结果</div></div>
+        <div class="step"><div class="step-num">5</div><div class="step-text">把「5 passed / 1 failed」写进 ProjectState</div></div>
+      </div>
+      <div class="code-block"># AI 写的测试，真实运行
+def test_create_todo():
+    create_todo("买牛奶")
+    todos = get_all_todos()
+    assert "买牛奶" in [t.title for t in todos]
+
+def test_delete_todo():
+    create_todo("临时任务")
+    delete_todo("临时任务")
+    todos = get_all_todos()
+    assert "临时任务" not in [t.title for t in todos]</div>
+      <div class="tag-row">
+        <span class="tag">与 Frontend 并发</span>
+        <span class="tag">pytest</span>
+        <span class="tag">结果影响 Validator</span>
+      </div>
+    </div>
+
+    <!-- UIValidator -->
+    <div class="expert-card c-ui">
+      <div class="expert-header">
+        <div class="expert-icon">📸</div>
+        <div>
+          <div class="expert-title">UIValidator
+            <a class="gh-badge" href="https://github.com/microsoft/playwright-mcp" target="_blank">↗ Playwright</a>
+          </div>
+          <div class="expert-sub">UI 验证工程师 · 截图 + 元素检查</div>
+        </div>
+      </div>
+      <div class="expert-desc">真实启动应用，像人一样看界面，确认按钮存在、布局正确。这是最「真实」的验证——它真的打开了一个窗口。</div>
+      <div class="steps">
+        <div class="step"><div class="step-num">1</div><div class="step-text">等 FrontendExpert 完成（界面代码必须先有）</div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-text">Playwright 启动应用，截图</div></div>
+        <div class="step"><div class="step-num">3</div><div class="step-text">检查「添加按钮」「任务列表」「删除按钮」是否存在</div></div>
+        <div class="step"><div class="step-num">4</div><div class="step-text">把截图路径和验证结果写进 ProjectState</div></div>
+      </div>
+      <div class="code-block"># Playwright 像人一样操作界面
+page.goto("http://localhost:3000")
+page.fill("#todo-input", "测试任务")
+page.click("#add-button")
+
+# 检查任务出现了
+assert page.locator(".todo-item").count() > 0</div>
+      <div class="tag-row">
+        <span class="tag">真实启动应用</span>
+        <span class="tag">Playwright MCP</span>
+        <span class="tag">截图存档</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ProjectState 白板 -->
+  <div class="card">
+    <h2>📋 四个人靠 ProjectState 共享数据</h2>
+    <p>他们不互相发消息，都通过这块「大白板」读写数据。每个人只写自己负责的部分。</p>
+    <div class="state-board">
+ProjectState = &#123;
+  <span class="s-comment"># Commander 写的</span>
+  <span class="s-cmd">"requirement"</span>:      "开发待办事项 App",
+  <span class="s-cmd">"task_list"</span>:         [backend, frontend, test, ui],
+
+  <span class="s-comment"># BackendExpert 写的 ↓</span>
+  <span class="s-back">"todo_db.py"</span>:        "import sqlite3\ndef create_todo...",
+
+  <span class="s-comment"># FrontendExpert 写的 ↓（先读了 todo_db.py）</span>
+  <span class="s-front">"todo_app.py"</span>:       "import tkinter\nfrom todo_db import...",
+
+  <span class="s-comment"># TestExpert 写的 ↓</span>
+  <span class="s-test">"test_todo.py"</span>:      "def test_create_todo...",
+  <span class="s-test">"test_results"</span>:      "5 passed, 0 failed",
+
+  <span class="s-comment"># UIValidator 写的 ↓</span>
+  <span class="s-ui">"screenshot"</span>:        "todo_app_screenshot.png",
+  <span class="s-ui">"ui_check_passed"</span>:   True,
+
+  "iteration_count":  1,
+&#125;
+    </div>
+  </div>
+
+  <!-- 时间轴 -->
+  <div class="timeline">
+    <h3>⏱️ 执行时间轴（接口优先设计）</h3>
+    <div class="tl-row">
+      <span class="tl-time">t=0s</span>
+      <div class="tl-bar bar-cmd" style="width:80px">Commander</div>
+      <span class="tl-note">拆解任务，生成接口规范（函数名/参数/返回值）</span>
+    </div>
+    <div class="tl-row">
+      <span class="tl-time">t=8s</span>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="tl-bar bar-back">BackendExpert（实现接口）</div>
+          <span class="tl-note">按规范实现函数，与 Frontend 并行 ✅</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="tl-bar bar-front">FrontendExpert（调用接口）</div>
+          <span class="tl-note">按规范调用函数，与 Backend 并行 ✅</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="tl-bar bar-test">TestExpert（按规范写测试）</div>
+          <span class="tl-note">同时开始</span>
+        </div>
+      </div>
+    </div>
+    <div class="tl-row" style="margin-top:6px">
+      <span class="tl-time">t=40s</span>
+      <div class="tl-bar bar-ui">UIValidator（截图验证）</div>
+      <span class="tl-note">等 Frontend 完成后才截图</span>
+    </div>
+    <div class="tl-row" style="margin-top:6px">
+      <span class="tl-time">t=55s</span>
+      <div class="tl-bar bar-val">→ Validator 质检</div>
+      <span class="tl-note">四人全完成，比串行节省约 30s</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    多角色 Agent 协作平台 · 实训项目 #21 &nbsp;|&nbsp;
+    <a href="系统架构.html">← 总架构图</a> &nbsp;|&nbsp;
+    <a href="指挥官层.html">③ 指挥官层</a>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTTP 基础 · GET POST DELETE 是什么</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f0f2f5;
+    color: #1a1a1a;
+    padding: 32px 20px;
+    min-height: 100vh;
+  }
+  .page-wrapper { max-width: 860px; margin: 0 auto; }
+
+  .page-header { text-align: center; margin-bottom: 28px; }
+  .page-header h1 { font-size: 20px; font-weight: 700; }
+  .page-header p { font-size: 13px; color: #888; margin-top: 6px; }
+  .nav-links { display: flex; justify-content: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .nav-link { font-size: 12px; color: #6366f1; text-decoration: none; padding: 4px 12px; background: #eef2ff; border-radius: 20px; }
+  .nav-link:hover { background: #e0e7ff; }
+
+  .card { background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; padding: 20px 24px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card p { font-size: 13px; line-height: 1.8; color: #374151; margin-bottom: 10px; }
+
+  /* 图书馆比喻 */
+  .library-scene {
+    display: flex; align-items: center; gap: 0;
+    background: #f8fafc; border-radius: 10px; overflow: hidden;
+    margin: 12px 0; border: 1px solid #e2e8f0;
+  }
+  .lib-you { background: #eff6ff; padding: 16px; text-align: center; min-width: 120px; }
+  .lib-arrow { background: #f1f5f9; padding: 12px 10px; color: #94a3b8; font-size: 22px; }
+  .lib-desk { background: #f0fdf4; padding: 16px; text-align: center; flex: 1; }
+  .lib-arrow2 { background: #f1f5f9; padding: 12px 10px; color: #94a3b8; font-size: 22px; }
+  .lib-server { background: #faf5ff; padding: 16px; text-align: center; min-width: 120px; }
+  .lib-icon { font-size: 28px; margin-bottom: 4px; }
+  .lib-name { font-size: 12px; font-weight: 700; }
+  .lib-sub { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+
+  /* HTTP 方法四格 */
+  .method-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+  .method-card { border-radius: 12px; padding: 16px; border: 1.5px solid transparent; }
+  .method-badge {
+    display: inline-block; border-radius: 7px; padding: 3px 10px;
+    font-size: 13px; font-weight: 800; font-family: monospace;
+    margin-bottom: 8px; letter-spacing: .04em;
+  }
+  .method-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .method-desc { font-size: 12px; line-height: 1.7; color: #4b5563; margin-bottom: 10px; }
+  .method-examples { font-size: 11px; }
+  .method-examples li { margin-bottom: 3px; color: #6b7280; }
+  .code-mini {
+    border-radius: 7px; padding: 10px 12px; font-size: 11px;
+    font-family: 'Consolas','Menlo',monospace; line-height: 1.9; margin: 8px 0;
+  }
+
+  /* GET */
+  .m-get { background: #f0fdf4; border-color: #bbf7d0; }
+  .m-get .method-badge { background: #22c55e; color: #fff; }
+  .m-get .code-mini { background: #dcfce7; color: #166534; }
+
+  /* POST */
+  .m-post { background: #eff6ff; border-color: #bfdbfe; }
+  .m-post .method-badge { background: #3b82f6; color: #fff; }
+  .m-post .code-mini { background: #dbeafe; color: #1e40af; }
+
+  /* DELETE */
+  .m-delete { background: #fff1f2; border-color: #fecdd3; }
+  .m-delete .method-badge { background: #ef4444; color: #fff; }
+  .m-delete .code-mini { background: #ffe4e6; color: #be123c; }
+
+  /* PATCH */
+  .m-patch { background: #fff7ed; border-color: #fed7aa; }
+  .m-patch .method-badge { background: #f97316; color: #fff; }
+  .m-patch .code-mini { background: #ffedd5; color: #c2410c; }
+
+  /* URL 解析 */
+  .url-bar {
+    background: #1e1e2e; color: #cdd6f4;
+    border-radius: 10px; padding: 16px 18px;
+    font-family: 'Consolas','Menlo',monospace;
+    font-size: 13px; line-height: 2;
+    margin: 12px 0;
+  }
+  .url-part { display: inline-block; border-radius: 5px; padding: 1px 6px; margin: 2px; }
+  .u-host { background: #313244; color: #89b4fa; }
+  .u-path { background: #3b3b5e; color: #f5c2e7; }
+  .u-resource { background: #45475a; color: #a6e3a1; }
+  .u-id { background: #585b70; color: #fab387; }
+  .url-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  .url-table th { background: #313244; color: #89b4fa; padding: 8px 12px; text-align: left; font-weight: 600; }
+  .url-table td { border-top: 1px solid #313244; padding: 8px 12px; color: #cdd6f4; }
+  .url-table .method { font-family: monospace; font-weight: 700; }
+  .url-table .m-g { color: #a6e3a1; }
+  .url-table .m-p { color: #89b4fa; }
+  .url-table .m-d { color: #f38ba8; }
+
+  /* 请求响应结构 */
+  .req-res { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0; }
+  .req-box { border-radius: 10px; padding: 14px; border: 1.5px solid transparent; }
+  .req-box h4 { font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+  .req-box pre { font-size: 11px; font-family: 'Consolas','Menlo',monospace; line-height: 1.9; white-space: pre-wrap; }
+  .rb-req { background: #f8fafc; border-color: #e2e8f0; }
+  .rb-req h4 { color: #475569; }
+  .rb-res { background: #f0fdf4; border-color: #bbf7d0; }
+  .rb-res h4 { color: #15803d; }
+
+  /* 状态码 */
+  .status-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 12px 0; }
+  .status-card { border-radius: 10px; padding: 12px 8px; text-align: center; border: 1.5px solid transparent; }
+  .status-code { font-size: 18px; font-weight: 800; font-family: monospace; }
+  .status-name { font-size: 10px; font-weight: 600; margin: 4px 0 2px; }
+  .status-desc { font-size: 10px; color: #6b7280; line-height: 1.4; }
+  .s-200 { background: #f0fdf4; border-color: #86efac; }
+  .s-200 .status-code { color: #16a34a; }
+  .s-201 { background: #eff6ff; border-color: #93c5fd; }
+  .s-201 .status-code { color: #2563eb; }
+  .s-400 { background: #fff7ed; border-color: #fdba74; }
+  .s-400 .status-code { color: #ea580c; }
+  .s-404 { background: #faf5ff; border-color: #c4b5fd; }
+  .s-404 .status-code { color: #7c3aed; }
+  .s-500 { background: #fff1f2; border-color: #fca5a5; }
+  .s-500 .status-code { color: #dc2626; }
+
+  /* 项目实战 */
+  .flow-dark {
+    background: #1e1e2e; color: #cdd6f4;
+    border-radius: 12px; padding: 18px 20px;
+  }
+  .flow-dark h3 { font-size: 13px; font-weight: 700; color: #89b4fa; margin-bottom: 14px; }
+  .flow-dark pre { font-size: 12px; font-family: 'Consolas','Menlo',monospace; line-height: 2; white-space: pre-wrap; }
+
+  .footer { text-align: center; font-size: 11px; color: #bbb; margin-top: 28px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+  .footer a { color: #6366f1; text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .method-grid, .req-res { grid-template-columns: 1fr; }
+    .status-grid { grid-template-columns: repeat(3, 1fr); }
+    .library-scene { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <div class="page-header">
+    <div class="nav-links">
+      <a class="nav-link" href="系统架构.html">← 总架构图</a>
+      <a class="nav-link" href="api.html">↑ API 层详解</a>
+    </div>
+    <h1>HTTP 基础 · GET / POST / DELETE 是什么</h1>
+    <p>浏览器和服务器说话的「动作词」，搞懂它后端逻辑全通。</p>
+  </div>
+
+  <!-- 先理解 HTTP -->
+  <div class="card">
+    <h2>🗣️ 浏览器和服务器怎么「说话」</h2>
+    <p>你每次打开网页、提交表单、点击按钮，浏览器都在和服务器对话，用的语言叫 <strong>HTTP</strong>。</p>
+    <p>HTTP 规定了几种「动作」，告诉服务器「我要做什么」——这就是 GET / POST / DELETE，统称 <strong>HTTP 方法</strong>。</p>
+    <div class="library-scene">
+      <div class="lib-you">
+        <div class="lib-icon">🧑‍💻</div>
+        <div class="lib-name">你（前端）</div>
+        <div class="lib-sub">浏览器里的网页</div>
+      </div>
+      <div class="lib-arrow">→</div>
+      <div class="lib-desk">
+        <div class="lib-icon">📋</div>
+        <div class="lib-name">HTTP 请求</div>
+        <div class="lib-sub">GET / POST / DELETE<br>+ 地址 + 数据</div>
+      </div>
+      <div class="lib-arrow2">→</div>
+      <div class="lib-server">
+        <div class="lib-icon">🖥️</div>
+        <div class="lib-name">服务器（后端）</div>
+        <div class="lib-sub">FastAPI</div>
+      </div>
+    </div>
+    <p>把服务器想象成一个<strong>图书馆</strong>，HTTP 方法是你和馆员说话的方式——</p>
+  </div>
+
+  <!-- 四种方法 -->
+  <div class="card">
+    <h2>📚 四种 HTTP 方法（用图书馆比喻）</h2>
+    <div class="method-grid">
+
+      <div class="method-card m-get">
+        <div class="method-badge">GET</div>
+        <div class="method-title">📖 「我要借一本书」</div>
+        <div class="method-desc">只取数据，<strong>不改任何东西</strong>。就像去图书馆借书查书，书架上的书一本没少。</div>
+        <div class="code-mini">你：GET /api/tasks/001
+馆员：{ id: "001", status: "完成", ... }</div>
+        <ul class="method-examples">
+          <li>✅ 打开网页</li>
+          <li>✅ 查询订单状态</li>
+          <li>✅ 搜索商品</li>
+        </ul>
+      </div>
+
+      <div class="method-card m-post">
+        <div class="method-badge">POST</div>
+        <div class="method-title">📦 「我要捐一本新书进来」</div>
+        <div class="method-desc"><strong>提交数据，创建新东西。</strong>必须带着「货物」（数据）一起发，服务器创建后返回新编号。</div>
+        <div class="code-mini">你：POST /api/tasks
+    附带：{ 需求: "做待办App" }
+馆员：{ task_id: "task_001" } ← 新编号</div>
+        <ul class="method-examples">
+          <li>✅ 注册账号</li>
+          <li>✅ 发评论</li>
+          <li>✅ 提交 AI 任务（本项目）</li>
+        </ul>
+      </div>
+
+      <div class="method-card m-delete">
+        <div class="method-badge">DELETE</div>
+        <div class="method-title">🗑️ 「把这本书销毁」</div>
+        <div class="method-desc"><strong>删掉某个已有的东西。</strong>指定编号，服务器把它删掉。</div>
+        <div class="code-mini">你：DELETE /api/tasks/001
+馆员：{ message: "已删除" }</div>
+        <ul class="method-examples">
+          <li>✅ 删帖子</li>
+          <li>✅ 取消订单</li>
+          <li>✅ 停止 AI 任务（本项目）</li>
+        </ul>
+      </div>
+
+      <div class="method-card m-patch">
+        <div class="method-badge">PATCH</div>
+        <div class="method-title">✏️ 「更新书里的某段内容」</div>
+        <div class="method-desc"><strong>修改已有的东西。</strong>PATCH 只改你指定的字段，PUT 是整个替换。</div>
+        <div class="code-mini">你：PATCH /api/tasks/001
+    附带：{ status: "paused" }
+馆员：{ id: "001", status: "paused" }</div>
+        <ul class="method-examples">
+          <li>✅ 改头像昵称</li>
+          <li>✅ 修改任务状态</li>
+          <li>✅ 更新配置</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- URL 结构 -->
+  <div class="card">
+    <h2>🔗 URL 是什么（「去哪里」）</h2>
+    <p>每次请求都要指定一个地址，告诉服务器「我要操作的是什么东西」：</p>
+    <div class="url-bar">
+<span class="url-part u-host">http://localhost:8000</span>  /  <span class="url-part u-path">api</span>  /  <span class="url-part u-resource">tasks</span>  /  <span class="url-part u-id">001</span>
+
+<span style="color:#6c7086;font-size:11px">
+└── 服务器地址 ──────┘     └─分组─┘   └─资源─┘   └─具体哪个─┘</span>
+    </div>
+    <p style="margin-bottom:10px">同一个地址，配不同的动作，完全不同的事情：</p>
+    <table class="url-table">
+      <tr>
+        <th>动作</th><th>地址</th><th>含义</th>
+      </tr>
+      <tr><td class="method m-g">GET</td><td>/api/tasks</td><td>取所有任务列表</td></tr>
+      <tr><td class="method m-g">GET</td><td>/api/tasks/001</td><td>取编号 001 的任务详情</td></tr>
+      <tr><td class="method m-p">POST</td><td>/api/tasks</td><td>新建一个任务</td></tr>
+      <tr><td class="method m-d">DELETE</td><td>/api/tasks/001</td><td>删除编号 001 的任务</td></tr>
+    </table>
+  </div>
+
+  <!-- 请求和响应 -->
+  <div class="card">
+    <h2>📬 请求和响应（「寄件」和「收件」）</h2>
+    <p>每次 HTTP 对话分两半，来回各一次：</p>
+    <div class="req-res">
+      <div class="req-box rb-req">
+        <h4>→ 你发出去（Request 请求）</h4>
+        <pre>POST /api/tasks
+Content-Type: application/json
+
+{
+  "需求": "开发待办事项App",
+  "优先级": "高"
+}
+
+↑ 动作 + 地址
+↑ 说明货物格式
+↑ 货物本体（Body）
+  只有 POST/PUT/PATCH 才有</pre>
+      </div>
+      <div class="req-box rb-res">
+        <h4>← 服务器回来（Response 响应）</h4>
+        <pre>200 OK
+
+{
+  "task_id": "task_001",
+  "status": "started",
+  "created_at": "2026-07-01"
+}
+
+↑ 状态码（成功还是失败）
+↑ 返回的数据</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- 状态码 -->
+  <div class="card">
+    <h2>🚦 状态码（服务器的「表情」）</h2>
+    <p style="margin-bottom:12px">服务器用一个三位数字告诉你「这次对话结果怎么样」：</p>
+    <div class="status-grid">
+      <div class="status-card s-200">
+        <div class="status-code">200</div>
+        <div class="status-name">OK</div>
+        <div class="status-desc">成功<br>「给你」</div>
+      </div>
+      <div class="status-card s-201">
+        <div class="status-code">201</div>
+        <div class="status-name">Created</div>
+        <div class="status-desc">创建成功<br>「新书登记好了」</div>
+      </div>
+      <div class="status-card s-400">
+        <div class="status-code">400</div>
+        <div class="status-name">Bad Request</div>
+        <div class="status-desc">你发的格式不对<br>「你填的表有错」</div>
+      </div>
+      <div class="status-card s-404">
+        <div class="status-code">404</div>
+        <div class="status-name">Not Found</div>
+        <div class="status-desc">找不到<br>「没有这本书」</div>
+      </div>
+      <div class="status-card s-500">
+        <div class="status-code">500</div>
+        <div class="status-name">Server Error</div>
+        <div class="status-desc">服务器崩了<br>「图书馆着火了」</div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:#6b7280;margin-top:8px">规律：<strong>2xx = 成功，4xx = 你的问题，5xx = 服务器的问题</strong></p>
+  </div>
+
+  <!-- 项目实战 -->
+  <div class="flow-dark">
+    <h3>⚙️ 回到这个项目 — 实际是怎么用的</h3>
+    <pre><span style="color:#6c7086"># 第一步：提交任务（POST）</span>
+<span style="color:#89b4fa">前端</span> → POST /api/tasks { "需求": "开发待办App" }
+<span style="color:#a6e3a1">后端</span> → 201 { "task_id": "task_001" }
+
+<span style="color:#6c7086"># 第二步：建立 WebSocket 实时连接</span>
+<span style="color:#89b4fa">前端</span> → 连接 ws://localhost:8000/ws/tasks/task_001
+
+<span style="color:#6c7086"># 第三步：后端主动推进度（不需要你 GET）</span>
+<span style="color:#fab387">后端推送</span> → { agent: "Commander", msg: "拆解需求中..." }
+<span style="color:#fab387">后端推送</span> → { agent: "Backend",   msg: "生成代码中..." }
+<span style="color:#fab387">后端推送</span> → { agent: "Validator", msg: "✅ 验收通过" }
+
+<span style="color:#6c7086"># 第四步：想停止任务（DELETE）</span>
+<span style="color:#89b4fa">前端</span> → DELETE /api/tasks/task_001
+<span style="color:#a6e3a1">后端</span> → 200 { "message": "已停止" }</pre>
+  </div>
+
+  <div class="footer" style="margin-top:20px">
+    多角色 Agent 协作平台 · 实训项目 #21 &nbsp;|&nbsp;
+    <a href="系统架构.html">← 总架构图</a> &nbsp;|&nbsp;
+    <a href="api.html">↑ API 层详解</a>
+  </div>
+
+</div>
+</body>
+</html>

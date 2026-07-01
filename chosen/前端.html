@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>① 用户交互层 · 7个组件详解</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f0f2f5;
+    color: #1a1a1a;
+    padding: 32px 20px;
+    min-height: 100vh;
+  }
+
+  .page-wrapper {
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  /* ── 页头 ── */
+  .page-header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .page-header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #111;
+  }
+  .page-header p {
+    font-size: 13px;
+    color: #888;
+    margin-top: 6px;
+  }
+  .back-link {
+    display: inline-block;
+    font-size: 12px;
+    color: #6366f1;
+    text-decoration: none;
+    margin-bottom: 16px;
+    padding: 4px 10px;
+    background: #eef2ff;
+    border-radius: 20px;
+  }
+  .back-link:hover { background: #e0e7ff; }
+
+  /* ── 通用卡片 ── */
+  .card {
+    border-radius: 12px;
+    padding: 16px;
+    border: 1.5px solid transparent;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .card-icon {
+    width: 36px; height: 36px;
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .card-title { font-size: 14px; font-weight: 700; }
+  .card-sub { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+  .card-desc { font-size: 12px; line-height: 1.7; margin-bottom: 10px; }
+  .code-block {
+    border-radius: 7px;
+    padding: 10px 12px;
+    font-size: 11px;
+    font-family: 'Consolas', 'Menlo', monospace;
+    line-height: 1.9;
+    margin-bottom: 10px;
+  }
+  .tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag {
+    border-radius: 20px;
+    padding: 2px 9px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  /* ── 布局 ── */
+  .section { margin-bottom: 14px; }
+
+  .cmdk-bar {
+    background: #7c3aed;
+    color: #fff;
+    border-radius: 12px;
+    padding: 14px 22px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    text-decoration: none;
+  }
+  .cmdk-bar:hover { background: #6d28d9; }
+  .cmdk-bar .icon { font-size: 22px; }
+  .cmdk-bar .name { font-size: 15px; font-weight: 700; }
+  .cmdk-bar .kbd {
+    background: rgba(255,255,255,.2);
+    border-radius: 6px;
+    padding: 2px 9px;
+    font-size: 12px;
+    font-family: monospace;
+  }
+  .cmdk-bar .note { opacity: .8; font-size: 13px; }
+  .cmdk-bar .gh {
+    margin-left: auto;
+    font-size: 11px;
+    opacity: .7;
+    border: 1px solid rgba(255,255,255,.3);
+    border-radius: 6px;
+    padding: 2px 8px;
+  }
+
+  .divider {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin: 10px 0;
+    color: #aaa;
+  }
+  .divider .arrow { font-size: 22px; }
+  .divider .label {
+    background: #e9ecef;
+    border: 1px solid #dee2e6;
+    border-radius: 20px;
+    padding: 3px 16px;
+    font-size: 11px;
+    color: #666;
+  }
+
+  .three-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+  }
+
+  /* ── 颜色主题 ── */
+  /* xyflow — 蓝 */
+  .c-flow { background: #eff6ff; border-color: #bfdbfe; }
+  .c-flow .card-icon { background: #dbeafe; }
+  .c-flow .code-block { background: #dbeafe; color: #1e40af; }
+  .c-flow .tag { background: #bfdbfe; color: #1d4ed8; }
+  .c-flow a { color: #1d4ed8; }
+
+  /* xterm — 深色终端 */
+  .c-term { background: #1e1e2e; border-color: #3b3b5e; }
+  .c-term .card-title { color: #cdd6f4; }
+  .c-term .card-sub { color: #7f849c !important; }
+  .c-term .card-desc { color: #bac2de; }
+  .c-term .card-icon { background: #313244; }
+  .c-term .code-block { background: #181825; }
+  .c-term .tag { background: #313244; color: #89b4fa; }
+  .c-term a { color: #89b4fa; }
+
+  /* recharts — 绿 */
+  .c-chart { background: #f0fdf4; border-color: #bbf7d0; }
+  .c-chart .card-icon { background: #dcfce7; }
+  .c-chart .code-block { background: #dcfce7; color: #166534; }
+  .c-chart .tag { background: #bbf7d0; color: #15803d; }
+  .c-chart a { color: #15803d; }
+
+  /* zustand — 橙 */
+  .c-state { background: #fff7ed; border-color: #fed7aa; }
+  .c-state .card-icon { background: #ffedd5; }
+  .c-state a { color: #c2410c; }
+
+  /* react — 中性灰 */
+  .c-react { background: #f8fafc; border-color: #e2e8f0; }
+  .c-react .card-icon { background: #e2e8f0; }
+  .c-react a { color: #475569; }
+
+  /* shadcn — 紫 */
+  .c-shadcn { background: #faf5ff; border-color: #e9d5ff; }
+  .c-shadcn .card-icon { background: #ede9fe; }
+  .c-shadcn a { color: #7c3aed; }
+
+  /* zustand flow chips */
+  .flow-chips {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+  .flow-chip {
+    background: #fed7aa;
+    color: #c2410c;
+    border-radius: 7px;
+    padding: 5px 11px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .flow-arrow { color: #d97706; font-size: 16px; }
+
+  /* 底部两列 */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .base-card {
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border: 1.5px solid transparent;
+    text-decoration: none;
+    color: inherit;
+  }
+  .base-card:hover { filter: brightness(.97); }
+  .base-icon { font-size: 26px; flex-shrink: 0; padding-top: 2px; }
+  .base-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .base-desc { font-size: 12px; color: #6b7280; line-height: 1.6; }
+  .base-gh { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+  .base-gh a { color: #6366f1; text-decoration: none; }
+  .base-gh a:hover { text-decoration: underline; }
+
+  /* GitHub 角标 */
+  .gh-badge {
+    display: inline-block;
+    font-size: 11px;
+    color: #6366f1;
+    text-decoration: none;
+    background: #eef2ff;
+    border-radius: 5px;
+    padding: 1px 7px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .gh-badge:hover { background: #e0e7ff; }
+
+  a { text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* 页脚 */
+  .footer {
+    text-align: center;
+    font-size: 11px;
+    color: #bbb;
+    margin-top: 28px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  @media (max-width: 640px) {
+    .three-col { grid-template-columns: 1fr; }
+    .two-col { grid-template-columns: 1fr; }
+    .cmdk-bar .gh { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <!-- 页头 -->
+  <div class="page-header">
+    <a class="back-link" href="系统架构.html">← 返回总架构图</a>
+    <h1>① 用户交互层 · 7 个组件详解</h1>
+    <p>你在浏览器里看到的网页界面，由这 7 块积木拼成。点击任意组件跳转 GitHub。</p>
+  </div>
+
+  <!-- cmdk 命令面板 -->
+  <div class="section">
+    <a class="cmdk-bar" href="https://github.com/pacocoursey/cmdk" target="_blank">
+      <span class="icon">⌨️</span>
+      <span class="name">cmdk 命令面板</span>
+      <span class="kbd">Ctrl + K</span>
+      <span class="note">弹出输入框 → 打一句话需求 → 回车提交 · 不用到处找按钮，一个快捷键直接说需求</span>
+      <span class="gh">↗ github.com/pacocoursey/cmdk · ⭐10k+</span>
+    </a>
+  </div>
+
+  <!-- 分隔 -->
+  <div class="divider">
+    <span class="arrow">↓</span>
+    <span class="label">任务提交后，下面三个窗口同时更新</span>
+    <span class="arrow">↓</span>
+  </div>
+
+  <!-- 三列 -->
+  <div class="section three-col">
+
+    <!-- @xyflow/react -->
+    <div class="card c-flow">
+      <div class="card-header">
+        <div class="card-icon">🗺️</div>
+        <div>
+          <div class="card-title">
+            @xyflow/react
+            <a class="gh-badge" href="https://github.com/xyflow/xyflow" target="_blank">↗ GitHub</a>
+          </div>
+          <div class="card-sub">Agent 流程图 · ⭐27k+</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        画「节点 + 箭头」的可拖拽图。每个 Agent 是一个方块，任务流向是箭头，运行时颜色实时变化——让你一眼看出整个 AI 协作流程在哪一步。
+      </div>
+      <div class="code-block">
+⬜ 指挥官      → 分析需求中…<br>
+🔵 后端 Expert → 写代码中…<br>
+🔵 前端 Expert → 生成界面中…<br>
+✅ 测试 Expert → 已通过<br>
+🔴 质检员      → ❌ 打回修复
+      </div>
+      <div class="tag-row">
+        <span class="tag">⬜ 灰 = 待机</span>
+        <span class="tag">🔵 蓝 = 运行中</span>
+        <span class="tag">✅ 绿 = 完成</span>
+        <span class="tag">🔴 红 = 失败/修复</span>
+      </div>
+    </div>
+
+    <!-- xterm.js -->
+    <div class="card c-term">
+      <div class="card-header">
+        <div class="card-icon">💻</div>
+        <div>
+          <div class="card-title">
+            xterm.js
+            <a class="gh-badge" href="https://github.com/xtermjs/xterm.js" target="_blank" style="background:#313244;color:#89b4fa">↗ GitHub</a>
+          </div>
+          <div class="card-sub">实时日志终端 · ⭐17k+</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        把「黑底白字的命令行终端」嵌进网页。AI 每输出一句话，立刻滚动出现在这里——像看直播，而不是等结束后才看结果。
+      </div>
+      <div class="code-block">
+        <span style="color:#89b4fa">[Commander]</span> <span style="color:#cdd6f4">正在拆解需求...</span><br>
+        <span style="color:#89b4fa">[Backend]</span>   <span style="color:#a6e3a1">生成 todo_db.py ✓</span><br>
+        <span style="color:#89b4fa">[Validator]</span> <span style="color:#f38ba8">❌ ruff: 2 个问题</span><br>
+        <span style="color:#89b4fa">[Backend]</span>   <span style="color:#fab387">第 2 轮修复中...</span><br>
+        <span style="color:#89b4fa">[Validator]</span> <span style="color:#a6e3a1">✅ 验收通过</span>
+      </div>
+      <div class="tag-row">
+        <span class="tag">WebSocket 实时推流</span>
+        <span class="tag">颜色区分状态</span>
+        <span class="tag">自动滚动</span>
+      </div>
+    </div>
+
+    <!-- Recharts -->
+    <div class="card c-chart">
+      <div class="card-header">
+        <div class="card-icon">📊</div>
+        <div>
+          <div class="card-title">
+            Recharts
+            <a class="gh-badge" href="https://github.com/recharts/recharts" target="_blank">↗ GitHub</a>
+          </div>
+          <div class="card-sub">数据图表 · ⭐24k+</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        把运行数据画成图表，让评委直观看到系统效率。不只是「AI 生成了代码」，而是能展示每个 Agent 的消耗和贡献。
+      </div>
+      <div class="code-block">
+Token 消耗（柱状图）<br>
+Commander <span style="color:#15803d">████████</span> 1,200<br>
+Backend   <span style="color:#15803d">████</span>     600<br>
+Validator <span style="color:#15803d">██</span>       300<br>
+<br>
+迭代次数：第 2 轮通过 ✅<br>
+总耗时：47 秒
+      </div>
+      <div class="tag-row">
+        <span class="tag">Token 用量</span>
+        <span class="tag">执行时间</span>
+        <span class="tag">迭代次数</span>
+        <span class="tag">Agent 贡献比</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Zustand -->
+  <div class="section">
+    <div class="card c-state">
+      <div class="card-header">
+        <div class="card-icon">📋</div>
+        <div>
+          <div class="card-title">
+            Zustand — 共享「黑板」（状态管理）
+            <a class="gh-badge" href="https://github.com/pmndrs/zustand" target="_blank" style="color:#c2410c;background:#ffedd5">↗ GitHub · ⭐50k+</a>
+          </div>
+          <div class="card-sub">让三个窗口的数据保持同步</div>
+        </div>
+      </div>
+      <div class="card-desc">
+        <strong>问题：</strong>流程图、日志终端、数据图表三个地方都需要知道「当前任务进行到哪一步」——如果互相传数据，很快就乱成一锅粥。<br><br>
+        <strong>解决：</strong>Zustand 是一块全局「黑板」，后端推来一条消息，写进黑板，三个窗口自动同时刷新。你不需要手动通知任何人。
+      </div>
+      <div class="flow-chips">
+        <span class="flow-chip">① WebSocket 收到消息</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-chip">② 写入 Zustand 黑板</span>
+        <span class="flow-arrow">→</span>
+        <span class="flow-chip">③ 流程图自动刷新</span>
+        <span class="flow-arrow">+</span>
+        <span class="flow-chip">④ 日志自动滚动</span>
+        <span class="flow-arrow">+</span>
+        <span class="flow-chip">⑤ 图表自动更新</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分隔 -->
+  <div class="divider">
+    <span class="arrow">↓</span>
+    <span class="label">所有组件都建立在这两块地基上</span>
+    <span class="arrow">↓</span>
+  </div>
+
+  <!-- 底部两列 -->
+  <div class="section two-col">
+
+    <a class="base-card c-react" href="https://github.com/facebook/react" target="_blank">
+      <div class="base-icon">⚛️</div>
+      <div>
+        <div class="base-name">React 18 + TypeScript</div>
+        <div class="base-desc">
+          整个网页的钢筋混凝土框架，上面所有组件都是 React「组件」。<br>
+          TypeScript = JavaScript 加了类型检查，写错代码编辑器立即报红，不用等运行才发现 bug。
+        </div>
+        <div class="base-gh">
+          <a href="https://github.com/facebook/react" target="_blank">↗ github.com/facebook/react · ⭐230k+</a> &nbsp;|&nbsp;
+          <a href="https://github.com/microsoft/TypeScript" target="_blank">↗ TypeScript · ⭐100k+</a>
+        </div>
+      </div>
+    </a>
+
+    <a class="base-card c-shadcn" href="https://github.com/shadcn-ui/ui" target="_blank">
+      <div class="base-icon">🎨</div>
+      <div>
+        <div class="base-name">shadcn/ui + TailwindCSS</div>
+        <div class="base-desc">
+          shadcn/ui = 现成的漂亮按钮、输入框、对话框，像宜家家具，直接拿来用。<br>
+          TailwindCSS = 工具类 CSS，快速调颜色和间距，统一整个界面风格。
+        </div>
+        <div class="base-gh">
+          <a href="https://github.com/shadcn-ui/ui" target="_blank">↗ shadcn/ui · ⭐65k+</a> &nbsp;|&nbsp;
+          <a href="https://github.com/tailwindlabs/tailwindcss" target="_blank">↗ TailwindCSS · ⭐84k+</a>
+        </div>
+      </div>
+    </a>
+
+  </div>
+
+  <!-- 页脚 -->
+  <div class="footer">
+    多角色 Agent 协作平台 · 实训项目 #21 &nbsp;|&nbsp;
+    <a href="architecture_diagram.html" style="color:#6366f1">← 返回总架构图</a>
+  </div>
+
+</div>
+</body>
+</html>

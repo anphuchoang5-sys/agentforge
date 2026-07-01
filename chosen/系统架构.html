@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多角色 Agent 协作平台 · 系统架构图</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+  background: #f9fafb;
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px;
+}
+
+.page-wrap { max-width: 960px; width: 100%; }
+
+/* ── 图例 ── */
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 12px;
+  padding: 8px 14px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+.legend-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #3b82f6; flex-shrink: 0;
+}
+
+/* ── 主图容器 ── */
+.diagram {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 24px 20px 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07), 0 4px 16px rgba(0,0,0,.04);
+}
+
+.title {
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 3px;
+  letter-spacing: -0.02em;
+}
+.subtitle {
+  text-align: center;
+  font-size: 11px;
+  color: #9ca3af;
+  margin-bottom: 16px;
+}
+.ref-note {
+  text-align: center;
+  font-size: 10px;
+  color: #c4b5fd;
+  background: #f5f3ff;
+  border: 1px solid #e9d5ff;
+  border-radius: 6px;
+  padding: 5px 10px;
+  margin-bottom: 14px;
+}
+
+/* ── 层容器 ── */
+.layer {
+  border-radius: 8px;
+  padding: 10px 12px 11px;
+  border: 1.5px solid;
+}
+.layer-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+  opacity: 0.65;
+}
+
+/* ── 盒子基础 ── */
+.boxes { display: flex; gap: 7px; flex-wrap: nowrap; }
+.box {
+  flex: 1;
+  min-width: 0;
+  border-radius: 6px;
+  padding: 7px 8px 7px;
+  border: 1px solid;
+  text-align: center;
+  line-height: 1.35;
+  position: relative;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
+}
+.box .n { font-weight: 600; font-size: 11px; }
+.box .t { font-size: 9.5px; opacity: 0.65; margin-top: 2px; }
+
+/* ── 可点击盒子 ── */
+.box.link {
+  cursor: pointer;
+  text-decoration: none;
+  display: block;
+}
+.box.link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.13);
+  opacity: 0.9;
+  z-index: 1;
+}
+/* GitHub 角标 */
+.box.link::after {
+  content: '↗';
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  font-size: 8.5px;
+  opacity: 0.4;
+  font-weight: 700;
+}
+
+/* ── 箭头行 ── */
+.arrow-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 4px 0;
+  font-size: 9.5px;
+  color: #9ca3af;
+}
+.arrow-row::before, .arrow-row::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
+}
+.arrow-row span { padding: 0 10px; white-space: nowrap; }
+
+/* ── 布局工具 ── */
+.row-dual {
+  display: grid;
+  grid-template-columns: 62fr 38fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.row-triple {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.row-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ── Chip ── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 100px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid;
+  margin: 2px;
+  cursor: pointer;
+  transition: transform 0.12s, opacity 0.12s;
+  position: relative;
+  text-decoration: none;
+}
+.chip:hover { transform: scale(1.06); opacity: 0.85; }
+
+/* ── Badge ── */
+.badge {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 7px;
+  margin-top: 4px;
+}
+
+/* ════════════════════════════
+   Layer 颜色
+════════════════════════════ */
+/* ① 用户交互层 */
+.l-ui   { background: #eff6ff; border-color: #bfdbfe; }
+.l-ui .layer-label { color: #1e40af; }
+.l-ui .box { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+
+/* ② API 层 */
+.l-api  { background: #f0f9ff; border-color: #bae6fd; }
+.l-api .layer-label { color: #0369a1; }
+.l-api .box { background: #e0f2fe; border-color: #7dd3fc; color: #0369a1; }
+
+/* ③ 指挥官层 */
+.l-orch { background: #f5f3ff; border-color: #ddd6fe; }
+.l-orch .layer-label { color: #4338ca; }
+.l-orch .box { background: #ede9fe; border-color: #c4b5fd; color: #4c1d95; }
+
+/* ④ 专家执行层 */
+.l-expert { background: #f0fdf4; border-color: #bbf7d0; }
+.l-expert .layer-label { color: #15803d; }
+.l-expert .box { background: #dcfce7; border-color: #86efac; color: #166534; }
+
+/* ⑤ Skills 层 */
+.l-skills { background: #f0fdfa; border-color: #99f6e4; }
+.l-skills .layer-label { color: #0f766e; }
+.chip-skill { background: #ccfbf1; border-color: #5eead4; color: #115e59; }
+.skills-sub { font-size: 9.5px; color: #0f766e; opacity: 0.65; margin-top: 6px; }
+
+/* ⑥ 验证者 */
+.l-validator { background: #fff7ed; border-color: #fdba74; }
+.l-validator .layer-label { color: #c2410c; }
+.l-validator .box { background: #fed7aa; border-color: #fb923c; color: #9a3412; }
+
+/* ⑦ 桌面控制层 */
+.l-desktop { background: #fdf4ff; border-color: #e9d5ff; }
+.l-desktop .layer-label { color: #7e22ce; }
+.l-desktop .box { background: #f3e8ff; border-color: #d8b4fe; color: #6b21a8; }
+
+/* ⑦ MCP 工具层 */
+.l-mcp { background: #f8fafc; border-color: #e2e8f0; }
+.l-mcp .layer-label { color: #475569; }
+.l-mcp .box { background: #f1f5f9; border-color: #cbd5e1; color: #334155; }
+
+/* ⑧ AI 模型层 */
+.l-llm { background: #1e1b4b; border-color: #4338ca; }
+.l-llm .layer-label { color: #a5b4fc; opacity: 1; }
+.l-llm .box { background: #312e81; border-color: #4f46e5; color: #e0e7ff; }
+.l-llm .box .t { color: #a5b4fc; opacity: 1; }
+
+/* ⑧ 可观测层 */
+.l-obs { background: #1c1917; border-color: #57534e; }
+.l-obs .layer-label { color: #a8a29e; opacity: 1; }
+.l-obs .box { background: #292524; border-color: #78716c; color: #e7e5e4; }
+.l-obs .box .t { color: #a8a29e; opacity: 1; }
+
+.badge-pass { background: #dcfce7; border: 1px solid #86efac; color: #166534; }
+.badge-fail { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- 图例 -->
+  <div class="legend">
+    <div class="legend-dot"></div>
+    <span>每个模块均可点击 → 跳转对应 GitHub 仓库（新标签页打开）&nbsp;·&nbsp;角标 ↗ 表示可点击</span>
+  </div>
+
+  <div class="diagram">
+    <div class="title">多角色 Agent 协作平台 · 系统架构</div>
+    <div class="subtitle">需求分析阶段 · 技术栈待审定 · 2026-06-30</div>
+    <div class="ref-note">参考原始架构：指挥官层(Commander) → 专家执行层 → Agent Skills 技能层 + 桌面控制层 + AI模型层 + 可观测层</div>
+
+    <!-- ════════════════════════════
+         ① 用户交互层
+    ════════════════════════════ -->
+    <div class="layer l-ui">
+      <div class="layer-label">① 用户交互层 · Web 控制台</div>
+      <div class="boxes">
+        <a class="box link" href="https://github.com/facebook/react" target="_blank" title="→ github.com/facebook/react">
+          <div class="n">React 18 + TypeScript</div><div class="t">前端框架</div>
+        </a>
+        <a class="box link" href="https://github.com/shadcn-ui/ui" target="_blank" title="→ github.com/shadcn-ui/ui">
+          <div class="n">shadcn/ui</div><div class="t">组件库 · Radix UI</div>
+        </a>
+        <a class="box link" href="https://github.com/xyflow/xyflow" target="_blank" title="→ github.com/xyflow/xyflow">
+          <div class="n">@xyflow/react</div><div class="t">Agent 流程图可视化</div>
+        </a>
+        <a class="box link" href="https://github.com/xtermjs/xterm.js" target="_blank" title="→ github.com/xtermjs/xterm.js">
+          <div class="n">xterm.js</div><div class="t">实时日志终端</div>
+        </a>
+        <a class="box link" href="https://github.com/recharts/recharts" target="_blank" title="→ github.com/recharts/recharts">
+          <div class="n">Recharts</div><div class="t">Token 指标图表</div>
+        </a>
+        <a class="box link" href="https://github.com/pmndrs/zustand" target="_blank" title="→ github.com/pmndrs/zustand">
+          <div class="n">Zustand</div><div class="t">状态管理</div>
+        </a>
+        <a class="box link" href="https://github.com/pacocoursey/cmdk" target="_blank" title="→ github.com/pacocoursey/cmdk">
+          <div class="n">cmdk</div><div class="t">命令面板</div>
+        </a>
+      </div>
+    </div>
+
+    <div class="arrow-row"><span>REST / WebSocket</span></div>
+
+    <!-- ════════════════════════════
+         ② API 层
+    ════════════════════════════ -->
+    <div class="layer l-api">
+      <div class="layer-label">② API 层 · FastAPI + Pydantic v2</div>
+      <div class="boxes">
+        <a class="box link" href="https://github.com/fastapi/fastapi" target="_blank" title="→ github.com/fastapi/fastapi">
+          <div class="n">FastAPI REST</div><div class="t">POST/GET /api/tasks</div>
+        </a>
+        <a class="box link" href="https://github.com/fastapi/fastapi" target="_blank" title="→ github.com/fastapi/fastapi">
+          <div class="n">WebSocket</div><div class="t">/ws/tasks/{id} 实时推送</div>
+        </a>
+        <a class="box link" href="https://github.com/pydantic/pydantic" target="_blank" title="→ github.com/pydantic/pydantic">
+          <div class="n">Pydantic v2</div><div class="t">结构化输出验证</div>
+        </a>
+        <a class="box link" href="https://github.com/sqlalchemy/sqlalchemy" target="_blank" title="→ github.com/sqlalchemy/sqlalchemy">
+          <div class="n">SQLAlchemy + SQLite</div><div class="t">任务持久化</div>
+        </a>
+      </div>
+    </div>
+
+    <div class="arrow-row"><span>任务分发 · asyncio.Queue</span></div>
+
+    <!-- ════════════════════════════
+         ③ 指挥官层 (Commander)
+    ════════════════════════════ -->
+    <div class="layer l-orch">
+      <div class="layer-label">③ 指挥官层 (Commander) · LangGraph StateGraph</div>
+      <div class="boxes">
+        <a class="box link" href="https://github.com/langchain-ai/langgraph" target="_blank" title="→ github.com/langchain-ai/langgraph">
+          <div class="n">意图拆解引擎</div><div class="t">需求 → DAG 任务图<br>Commander Agent</div>
+        </a>
+        <a class="box link" href="https://github.com/langchain-ai/langgraph" target="_blank" title="→ github.com/langchain-ai/langgraph">
+          <div class="n">任务调度器</div><div class="t">DAG 编排 + 依赖管理<br>asyncio.Queue</div>
+        </a>
+        <a class="box link" href="https://github.com/langchain-ai/langgraph" target="_blank" title="→ github.com/langchain-ai/langgraph">
+          <div class="n">审计与反思</div><div class="t">输出验证 + 自动纠错<br>MemorySaver 断点续跑</div>
+        </a>
+        <a class="box link" href="https://github.com/mem0ai/mem0" target="_blank" title="→ github.com/mem0ai/mem0">
+          <div class="n">记忆管理</div><div class="t">mem0 + SQLite<br>跨会话上下文</div>
+        </a>
+      </div>
+    </div>
+
+    <div class="arrow-row"><span>LangGraph StateGraph · 有向图 + 条件边 (route_to_expert)</span></div>
+
+    <!-- ════════════════════════════
+         ④ 专家执行层
+    ════════════════════════════ -->
+    <div class="layer l-expert">
+      <div class="layer-label">④ 专家执行层 · 每个 Agent = LangGraph Node，独立上下文窗口（避免上下文稀释）</div>
+      <div class="boxes">
+        <a class="box link" href="https://github.com/langchain-ai/langgraph" target="_blank" title="→ github.com/langchain-ai/langgraph">
+          <div class="n">前端工程师 Agent</div><div class="t">Tkinter / Web UI<br>React/Vue 代码生成</div>
+        </a>
+        <a class="box link" href="https://github.com/langchain-ai/langgraph" target="_blank" title="→ github.com/langchain-ai/langgraph">
+          <div class="n">后端工程师 Agent</div><div class="t">SQLite / FastAPI<br>API / 数据库实现</div>
+        </a>
+        <a class="box link" href="https://github.com/pytest-dev/pytest" target="_blank" title="→ github.com/pytest-dev/pytest">
+          <div class="n">测试工程师 Agent</div><div class="t">单元 / E2E 测试生成<br>pytest 沙箱执行</div>
+        </a>
+        <a class="box link" href="https://github.com/pywinauto/pywinauto" target="_blank" title="→ github.com/pywinauto/pywinauto">
+          <div class="n">UI 验证工程师 Agent</div><div class="t">桌面应用自动化测试<br>界面截图 · 元素验证</div>
+        </a>
+      </div>
+    </div>
+
+    <!-- ⑤ Skills + ⑥ Validator -->
+    <div class="row-dual">
+      <!-- Skills -->
+      <div class="layer l-skills" style="align-self:stretch;">
+        <div class="layer-label">⑤ Agent Skills 技能层 · 参考 google-gemini/agent-skills（20个生产级技能）</div>
+        <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:2px;">
+          <a class="chip chip-skill" href="https://github.com/google-gemini/agent-skills" target="_blank" title="→ github.com/google-gemini/agent-skills">/spec 规格</a>
+          <a class="chip chip-skill" href="https://github.com/google-gemini/agent-skills" target="_blank" title="→ github.com/google-gemini/agent-skills">/plan 规划</a>
+          <a class="chip chip-skill" href="https://github.com/google-gemini/agent-skills" target="_blank" title="→ github.com/google-gemini/agent-skills">/build 构建</a>
+          <a class="chip chip-skill" href="https://github.com/google-gemini/agent-skills" target="_blank" title="→ github.com/google-gemini/agent-skills">/test 测试</a>
+          <a class="chip chip-skill" href="https://github.com/google-gemini/agent-skills" target="_blank" title="→ github.com/google-gemini/agent-skills">/review 审查</a>
+          <a class="chip chip-skill" href="https://github.com/google-gemini/agent-skills" target="_blank" title="→ github.com/google-gemini/agent-skills">/ship 交付</a>
+        </div>
+        <div class="skills-sub">三层渐进加载 · L1 发现(~100 tokens) · L2 激活(&lt;5k tokens) · L3 穿透(按需)</div>
+        <a class="chip chip-skill" href="https://github.com/modelcontextprotocol/servers" target="_blank"
+           style="margin-top:8px; border-radius:6px; padding:4px 10px; font-size:9.5px;" title="→ github.com/modelcontextprotocol/servers">
+          MCP Client · 标准化工具调用 → modelcontextprotocol/servers
+        </a>
+      </div>
+
+      <!-- Validator -->
+      <div class="layer l-validator" style="align-self:stretch;">
+        <div class="layer-label">⑥ 验证者 Agent · 审计与反思</div>
+        <div class="boxes" style="flex-direction:column; gap:6px;">
+          <a class="box link" href="https://github.com/astral-sh/ruff" target="_blank" title="→ github.com/astral-sh/ruff" style="min-width:0; flex:none;">
+            <div class="n">ruff + LLM 审计</div>
+            <div class="t">代码质量检查 + 验收标准对比</div>
+          </a>
+          <a class="box link" href="https://github.com/langchain-ai/langgraph" target="_blank" title="→ github.com/langchain-ai/langgraph" style="min-width:0; flex:none;">
+            <div class="n">条件边闭环</div>
+            <div style="margin-top:5px; display:flex; gap:5px; justify-content:center; flex-wrap:wrap;">
+              <span class="badge badge-pass">✅ 通过 → 完成</span>
+              <span class="badge badge-fail">❌ 失败 → 修复 max 5 轮</span>
+            </div>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-row" style="margin-top:8px;"><span>MCP Protocol / Tool calls</span></div>
+
+    <!-- ════════════════════════════
+         ⑦ 桌面控制层 + MCP 工具层
+    ════════════════════════════ -->
+    <div class="row-dual" style="margin-top:0;">
+      <!-- 桌面控制层 -->
+      <div class="layer l-desktop" style="align-self:stretch;">
+        <div class="layer-label">⑦ 桌面控制层 · agent-aid / OpenClaw</div>
+        <div class="boxes">
+          <a class="box link" href="https://github.com/openclaw/openclaw" target="_blank" title="→ github.com/openclaw/openclaw">
+            <div class="n">OpenClaw</div><div class="t">跨平台 AI Agent<br>380k+ Stars · 环境感知</div>
+          </a>
+          <a class="box link" href="https://github.com/pywinauto/pywinauto" target="_blank" title="→ github.com/pywinauto/pywinauto">
+            <div class="n">pywinauto</div><div class="t">Win32 Accessibility<br>不依赖坐标</div>
+          </a>
+          <a class="box link" href="https://github.com/microsoft/playwright-mcp" target="_blank" title="→ github.com/microsoft/playwright-mcp">
+            <div class="n">Playwright MCP</div><div class="t">Web UI 自动化<br>录制 · 回放</div>
+          </a>
+        </div>
+      </div>
+
+      <!-- MCP 工具 + 向量 -->
+      <div class="layer l-mcp" style="align-self:stretch;">
+        <div class="layer-label">⑦ MCP 工具 + 向量记忆</div>
+        <div class="boxes" style="flex-direction:column; gap:6px;">
+          <a class="box link" href="https://github.com/modelcontextprotocol/servers" target="_blank" title="→ github.com/modelcontextprotocol/servers" style="min-width:0; flex:none;">
+            <div class="n">MCP Servers</div><div class="t">filesystem · git · sqlite</div>
+          </a>
+          <a class="box link" href="https://github.com/chroma-core/chroma" target="_blank" title="→ github.com/chroma-core/chroma" style="min-width:0; flex:none;">
+            <div class="n">ChromaDB</div><div class="t">向量记忆 · 零配置本地<br>Agent 长期记忆存储</div>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════
+         ⑧ AI 模型层 + 可观测层
+    ════════════════════════════ -->
+    <div class="row-bottom">
+      <!-- AI 模型层 -->
+      <div class="layer l-llm">
+        <div class="layer-label">⑧ AI 模型层 · Ollama 本地运行</div>
+        <div class="boxes">
+          <a class="box link" href="https://github.com/ollama/ollama" target="_blank" title="→ github.com/ollama/ollama">
+            <div class="n">Qwen2.5-Coder:7b</div>
+            <div class="t">Expert Agent · 6GB 显存<br>代码生成与推理</div>
+          </a>
+          <a class="box link" href="https://github.com/ollama/ollama" target="_blank" title="→ github.com/ollama/ollama">
+            <div class="n">Qwen2.5:14b</div>
+            <div class="t">Commander · 10GB 显存<br>任务规划推理</div>
+          </a>
+        </div>
+      </div>
+
+      <!-- 可观测层 -->
+      <div class="layer l-obs">
+        <div class="layer-label">⑧ 可观测层 · Agent 调用链追踪</div>
+        <div class="boxes">
+          <a class="box link" href="https://github.com/jaegertracing/jaeger" target="_blank" title="→ github.com/jaegertracing/jaeger">
+            <div class="n">OpenTelemetry + Jaeger</div>
+            <div class="t">Agent 调用链可视化<br>Docker 一键启动</div>
+          </a>
+          <a class="box link" href="https://github.com/langchain-ai/langsmith-sdk" target="_blank" title="→ github.com/langchain-ai/langsmith-sdk">
+            <div class="n">LangSmith</div>
+            <div class="t">LLM Prompt 追踪<br>结构化日志 + 指标</div>
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.diagram -->
+</div><!-- /.page-wrap -->
+</body>
+</html>

@@ -1,0 +1,48 @@
+# Claude Code 本地配置（机器特定，不提交）
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.env
+.env.*
+*.env
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+
+# 数据库文件（运行时生成）
+*.db
+*.sqlite
+*.sqlite3
+
+# 向量数据库（运行时生成）
+chroma_db/
+.chroma/
+
+# 日志
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+
+# 敏感配置
+*.pem
+*.key
+secrets.json
+credentials.json
