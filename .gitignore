@@ -46,3 +46,7 @@ desktop.ini
 *.key
 secrets.json
 credentials.json
+
+# 个人模板/笔记（不对外公开）
+分工指南模板.md
+chosen/最终分工表.docx

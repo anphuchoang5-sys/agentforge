@@ -1,0 +1,27 @@
+# ============================================================
+# AgentForge · 后端依赖
+# ============================================================
+
+# ── 同学 A（Commander / Ollama 调用）────────────────────────
+requests>=2.31.0          # ollama_client.py 直接调 HTTP API
+pydantic>=2.0             # schemas.py 结构化数据验证
+langchain-ollama>=0.1.0   # decompose.py 结构化输出（可选但推荐）
+langchain>=0.2.0          # langchain 基础包
+
+# ── 同学 B（LangGraph 状态机 + MCP + 专家 Agent）─────────────
+langgraph>=0.1.0          # StateGraph 状态机核心
+langchain-mcp-adapters>=0.1.0  # MCP 工具加载器
+fastapi>=0.110.0          # REST API + WebSocket
+uvicorn[standard]>=0.29.0 # ASGI 服务器
+pydantic-settings>=2.0    # 环境变量配置管理
+sqlalchemy>=2.0           # 任务状态持久化 ORM
+
+# ── 同学 C（验证者 + 桌面控制）──────────────────────────────
+ruff>=0.4.0               # 代码质量检查（比 pylint 快 10x）
+pywinauto>=0.6.8          # Windows 桌面 UI 自动化
+playwright>=1.44.0        # Web UI 自动化 + 截图
+
+# ── 共用 ────────────────────────────────────────────────────
+chromadb>=0.5.0           # 向量数据库（mem0 底层）
+mem0ai>=0.0.20            # Agent 跨会话记忆
+opentelemetry-sdk>=1.24.0 # 可观测性埋点
