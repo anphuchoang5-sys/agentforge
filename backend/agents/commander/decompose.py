@@ -20,12 +20,12 @@ from typing import Optional
 try:
     # 方式一：相对导入（作为包的一部分被导入时用）
     from .commander_prompt import COMMANDER_SYSTEM_PROMPT
-    from .schemas import TaskDecomposition, FALLBACK_DECOMPOSITION
+    from .schemas import TaskDecomposition
     from .ollama_client import generate, generate_with_metrics as _gem, health_check
 except ImportError:
     # 方式二：绝对导入（直接运行时用）
     from commander_prompt import COMMANDER_SYSTEM_PROMPT
-    from schemas import TaskDecomposition, FALLBACK_DECOMPOSITION
+    from schemas import TaskDecomposition
     from ollama_client import generate, generate_with_metrics as _gem, health_check
 
 
@@ -127,9 +127,11 @@ def decompose(user_input: str, model: str = "Qwen2.5-Coder:7B") -> TaskDecomposi
 
         print(f"[WARN] {current_model} 3次均失败，尝试下一个模型")
 
-    # 全部失败 → 用兜底方案
-    print("[WARN] 所有模型均失败，使用兜底方案")
-    return FALLBACK_DECOMPOSITION
+    # 全部失败 → 明确报错，不返回假数据
+    raise RuntimeError(
+        "需求拆解失败：所有模型均无响应。\n"
+        "请确认 Ollama 已启动（ollama serve）或配置云端 API。"
+    )
 
 
 def decompose_with_metrics(
@@ -145,14 +147,10 @@ def decompose_with_metrics(
             raw = metrics["response"]
 
             parsed = _parse_json_fallback(raw)
-            if parsed:
-                try:
-                    result = TaskDecomposition.model_validate(parsed)
-                except Exception:
-                    result = FALLBACK_DECOMPOSITION
-            else:
-                result = FALLBACK_DECOMPOSITION
+            if not parsed:
+                raise RuntimeError(f"模型返回内容无法解析为 JSON，模型={current_model}")
 
+            result = TaskDecomposition.model_validate(parsed)
             return {
                 "result": result.model_dump(),
                 "metrics": {
@@ -165,11 +163,10 @@ def decompose_with_metrics(
             print(f"[WARN] {current_model} 调用失败: {e}")
             continue
 
-    # 全部失败，用兜底
-    return {
-        "result": FALLBACK_DECOMPOSITION.model_dump(),
-        "metrics": {"duration_ms": 0, "tokens": 0, "model": model},
-    }
+    raise RuntimeError(
+        "需求拆解失败：所有模型均无响应。\n"
+        "请确认 Ollama 已启动（ollama serve）或配置云端 API。"
+    )
 
 
 # ===== 自测 =====
