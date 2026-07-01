@@ -1,5 +1,22 @@
 # 多角色 Agent 协作平台：从 Skills 到软件工厂
 
+## 八荣八耻 · AI 编码准则
+
+> 写给所有参与本项目的 AI 和人类开发者。
+
+| 耻 | 荣 |
+|---|---|
+| 以**暗猜接口**为耻 | 以**认真查阅**为荣 |
+| 以**模糊执行**为耻 | 以**寻求确认**为荣 |
+| 以**盲想业务**为耻 | 以**人类确认**为荣 |
+| 以**创造接口**为耻 | 以**复用现有**为荣 |
+| 以**跳过验证**为耻 | 以**主动测试**为荣 |
+| 以**破坏架构**为耻 | 以**遵循规范**为荣 |
+| 以**假装理解**为耻 | 以**诚实无知**为荣 |
+| 以**盲目修改**为耻 | 以**谨慎重构**为荣 |
+
+---
+
 ## 项目概述
 
 **实训题目 #21** — 大模型方向，工期 2 周（含架构设计、核心功能、演示场景）
@@ -7,6 +24,81 @@
 构建一个基于 Agent Skills 标准的 AI 软件开发工厂平台，实现多角色 Agent 的协作式软件开发闭环。
 
 **核心演示场景**：输入一句话需求（如"开发一个待办事项桌面应用"），由 Agent 系统自主完成需求拆解 → 代码生成 → UI 测试 → 修复闭环，全程可视化展示。
+
+---
+
+## 团队分工
+
+> 接口格式定死，联调前所有人确认，确认后任何人不得擅自修改。
+
+### 同学 A · 需求理解与拆解
+
+**对外接口**：`{"user_input":"..."} → {"tasks":[{"id":1,"desc":"..."}]}`
+
+负责：Ollama 部署、统一模型调用 API 封装、指挥官 Agent System Prompt、需求拆解逻辑、JSON Schema 定义、异常重试、调用日志
+
+### 同学 B · 代码生成与流程控制（本人）
+
+**对外接口**：
+- 全流程入口：`{"user_input":"..."} → {"deliverable":"./output/xxx.zip","test_report":{...}}`
+- 与 C 接口：`{"tasks":[...]} → {"app_path":"./output/todo_app/main.py"}`
+
+| 工作项 | 具体内容 |
+|-------|---------|
+| 专家 Agent | 编写前端/后端专家 Agent 的 System Prompt（代码生成模板） |
+| Skills 集成 | 集成 google-gemini/agent-skills，调用对应 Skill 保证代码质量 |
+| MCP Server | 搭建 MCP Server，暴露文件读写/命令执行工具 |
+| 文件工具 | `write_file`、`read_file`（代码落盘、读取已有代码） |
+| 命令工具 | `run_command`（执行 pip install、python main.py 等） |
+| 状态机 | LangGraph StateGraph：待执行 → 执行中 → 成功/失败 |
+| 全流程入口 | `run(user_input)` 协调 A 和 C 的调用，返回交付物 |
+| 循环控制 | 验证失败后最多重试 5 次，超时转人工 |
+
+**不做的事**：模型 API 封装（A）、验证者 Agent（C）、桌面控制（C）、前端界面（D）
+
+**独立验证**：用假任务清单测试代码生成逻辑；查看代码文件是否真的落地到文件夹
+
+### 同学 C · 自动化验证与桌面控制
+
+**对外接口**：`{"app_path":"..."} → {"passed":true,"logs":[...],"screenshot":"base64...","failed_tests":[]}`
+
+负责：验证者 Agent System Prompt、编译检查、功能测试、pywinauto/OpenClaw 集成、ui_click / ui_input / screenshot / app_launch 封装、测试报告生成
+
+### 同学 D · 前端展示与可观测性
+
+**对外接口**：接收 WebSocket `{"step":"...","progress":50}` 并展示；对外暴露 `POST /api/submit`
+
+负责：React + TypeScript + shadcn/ui 项目、用户输入界面、WebSocket 实时日志、DAG 可视化（@xyflow/react）、OpenTelemetry + Jaeger 集成、Token 指标图表（Recharts）、交付物下载
+
+### 模块依赖关系
+
+```
+A  ──接口1──►  B  ──接口3──►  C
+                │                │
+                └──进度推送──►  D  ◄──进度推送── A/C
+```
+
+- B 依赖 A（任务清单）、B 调用 C（提交代码路径，拿测试报告）
+- D 无依赖，用 Mock 数据独立开发，最后接真实接口
+- **B 不依赖 D**，反向无依赖
+
+---
+
+## 架构决策记录
+
+### 接口优先设计（API-First）
+
+Commander 第一步生成接口规范（函数名/参数/返回值），存入 ProjectState，BackendExpert 和 FrontendExpert 同时读取规范并行开发，不需要等对方完成。
+
+### AI 模型策略
+
+**主力用云端 API**（DeepSeek-V3 / Claude Haiku / DeepSeek-Coder），本项目需要联网。Ollama 仅作离线兜底。
+
+| Agent | 推荐模型 | 理由 |
+|-------|---------|------|
+| Commander / Validator | DeepSeek-V3 | 推理能力强，做规划和验收判断 |
+| BackendExpert / FrontendExpert / TestExpert | DeepSeek-Coder | 代码专用模型更准 |
+| mem0 内部 LLM | qwen2.5:7b (Ollama) | 纯本地提炼记忆，不需要最强模型 |
 
 ---
 

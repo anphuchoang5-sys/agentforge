@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⑤ Skills 技能层 · 三层渐进式加载</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f0f2f5;
+    color: #1a1a1a;
+    padding: 32px 20px;
+    min-height: 100vh;
+  }
+  .page-wrapper { max-width: 860px; margin: 0 auto; }
+
+  .page-header { text-align: center; margin-bottom: 28px; }
+  .page-header h1 { font-size: 20px; font-weight: 700; }
+  .page-header p { font-size: 13px; color: #888; margin-top: 6px; }
+  .nav-links { display: flex; justify-content: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .nav-link { font-size: 12px; color: #6366f1; text-decoration: none; padding: 4px 12px; background: #eef2ff; border-radius: 20px; }
+  .nav-link:hover { background: #e0e7ff; }
+
+  .card { background: #fff; border-radius: 14px; border: 1.5px solid #e5e7eb; padding: 20px 24px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card p { font-size: 13px; line-height: 1.8; color: #374151; margin-bottom: 10px; }
+
+  /* Token 对比 */
+  .token-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 12px 0; }
+  .token-box { border-radius: 10px; padding: 14px; border: 1.5px solid transparent; }
+  .token-box h4 { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+  .token-bar { height: 10px; border-radius: 5px; margin: 4px 0 2px; }
+  .token-label { font-size: 11px; color: #6b7280; }
+  .tb-bad { background: #fff1f2; border-color: #fecdd3; }
+  .tb-bad h4 { color: #be123c; }
+  .tb-bad .token-bar { background: #fca5a5; width: 100%; }
+  .tb-good { background: #f0fdf4; border-color: #bbf7d0; }
+  .tb-good h4 { color: #15803d; }
+  .tb-good .token-bar-small { height: 10px; border-radius: 5px; background: #86efac; width: 20%; margin: 4px 0 2px; }
+
+  /* 三层加载 */
+  .layers { display: flex; flex-direction: column; gap: 12px; margin: 14px 0; }
+  .layer { border-radius: 12px; padding: 16px; border: 1.5px solid transparent; display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; }
+  .layer-badge { font-size: 13px; font-weight: 800; font-family: monospace; border-radius: 8px; padding: 4px 10px; white-space: nowrap; }
+  .layer-content {}
+  .layer-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .layer-desc { font-size: 12px; color: #6b7280; line-height: 1.6; }
+  .layer-token { text-align: right; white-space: nowrap; }
+  .token-num { font-size: 16px; font-weight: 800; font-family: monospace; }
+  .token-unit { font-size: 10px; color: #9ca3af; }
+
+  .l1 { background: #eff6ff; border-color: #bfdbfe; }
+  .l1 .layer-badge { background: #3b82f6; color: #fff; }
+  .l1 .token-num { color: #2563eb; }
+  .l2 { background: #f0fdf4; border-color: #bbf7d0; }
+  .l2 .layer-badge { background: #22c55e; color: #fff; }
+  .l2 .token-num { color: #15803d; }
+  .l3 { background: #fff7ed; border-color: #fed7aa; }
+  .l3 .layer-badge { background: #f97316; color: #fff; }
+  .l3 .token-num { color: #c2410c; }
+
+  /* App 类比 */
+  .app-analogy { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 12px 0; }
+  .app-card { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px; text-align: center; }
+  .app-icon { font-size: 28px; margin-bottom: 6px; }
+  .app-l { font-size: 11px; font-weight: 700; color: #6366f1; margin-bottom: 4px; }
+  .app-name { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .app-desc { font-size: 11px; color: #9ca3af; line-height: 1.5; }
+
+  /* 六个技能 */
+  .skills-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
+  .skill-card { border-radius: 10px; padding: 14px; border: 1.5px solid transparent; }
+  .skill-cmd { font-size: 16px; font-weight: 800; font-family: monospace; margin-bottom: 6px; }
+  .skill-name { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .skill-desc { font-size: 11px; color: #6b7280; line-height: 1.6; }
+  .skill-insight { font-size: 11px; margin-top: 6px; padding: 5px 8px; border-radius: 6px; font-style: italic; }
+
+  .sk-spec { background: #eff6ff; border-color: #bfdbfe; }
+  .sk-spec .skill-cmd { color: #2563eb; }
+  .sk-spec .skill-insight { background: #dbeafe; color: #1e40af; }
+  .sk-plan { background: #faf5ff; border-color: #e9d5ff; }
+  .sk-plan .skill-cmd { color: #7c3aed; }
+  .sk-plan .skill-insight { background: #ede9fe; color: #5b21b6; }
+  .sk-build { background: #fff7ed; border-color: #fed7aa; }
+  .sk-build .skill-cmd { color: #c2410c; }
+  .sk-build .skill-insight { background: #ffedd5; color: #c2410c; }
+  .sk-test { background: #f0fdf4; border-color: #bbf7d0; }
+  .sk-test .skill-cmd { color: #15803d; }
+  .sk-test .skill-insight { background: #dcfce7; color: #166534; }
+  .sk-review { background: #fff1f2; border-color: #fecdd3; }
+  .sk-review .skill-cmd { color: #be123c; }
+  .sk-review .skill-insight { background: #ffe4e6; color: #be123c; }
+  .sk-ship { background: #fefce8; border-color: #fde68a; }
+  .sk-ship .skill-cmd { color: #b45309; }
+  .sk-ship .skill-insight { background: #fef9c3; color: #92400e; }
+
+  /* 完整调用流程 */
+  .flow-dark { background: #1e1e2e; color: #cdd6f4; border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+  .flow-dark h3 { font-size: 13px; font-weight: 700; color: #89b4fa; margin-bottom: 14px; }
+  .flow-dark pre { font-size: 12px; font-family: 'Consolas','Menlo',monospace; line-height: 2; white-space: pre-wrap; }
+
+  /* Skill 文件结构 */
+  .file-tree { background: #1e1e2e; border-radius: 10px; padding: 14px 16px; font-family: monospace; font-size: 12px; line-height: 2; color: #cdd6f4; margin: 12px 0; }
+
+  .code-block { border-radius: 7px; padding: 10px 12px; font-size: 11px; font-family: 'Consolas','Menlo',monospace; line-height: 1.9; margin: 10px 0; white-space: pre-wrap; }
+  .cb-dark { background: #181825; color: #cdd6f4; }
+
+  .footer { text-align: center; font-size: 11px; color: #bbb; margin-top: 28px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+  .footer a { color: #6366f1; text-decoration: none; }
+
+  @media (max-width: 620px) {
+    .token-compare, .app-analogy, .skills-grid { grid-template-columns: 1fr; }
+    .layer { grid-template-columns: auto 1fr; }
+    .layer-token { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <div class="page-header">
+    <div class="nav-links">
+      <a class="nav-link" href="系统架构.html">← 总架构图</a>
+      <a class="nav-link" href="指挥官层.html">③ 指挥官</a>
+      <a class="nav-link" href="专家池.html">④ 专家池</a>
+    </div>
+    <h1>⑤ Skills 技能层 · 三层渐进式加载</h1>
+    <p>Agent 的「按需加载工具书」——用到哪页翻哪页，不浪费上下文。</p>
+  </div>
+
+  <!-- 为什么需要 Skills 层 -->
+  <div class="card">
+    <h2>🤔 为什么不直接把所有指令塞给 AI？</h2>
+    <p>Agent 做每件事都需要「指导手册」——怎么写规格、怎么拆任务、怎么写代码……如果一次性全部加载，token 爆炸：</p>
+    <div class="token-compare">
+      <div class="token-box tb-bad">
+        <h4>❌ 一次性全加载</h4>
+        <div class="token-bar"></div>
+        <div class="token-label">6 个技能 × 5000 token = <strong>30,000 token</strong></div>
+        <div class="token-label" style="margin-top:6px">光看手册就把脑容量占满，还没开始干活</div>
+      </div>
+      <div class="token-box tb-good">
+        <h4>✅ 三层渐进式加载</h4>
+        <div class="token-bar-small"></div>
+        <div class="token-label">启动时只加载 6 × 100 = <strong>600 token</strong></div>
+        <div class="token-label" style="margin-top:6px">用到哪个技能才加载完整内容，用完即释放</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 三层加载 -->
+  <div class="card">
+    <h2>📱 三层加载（类比手机 App）</h2>
+    <div class="app-analogy">
+      <div class="app-card">
+        <div class="app-icon">🏠</div>
+        <div class="app-l">L1 发现层</div>
+        <div class="app-name">桌面图标</div>
+        <div class="app-desc">只看到 App 名字，几乎不占空间</div>
+      </div>
+      <div class="app-card">
+        <div class="app-icon">📱</div>
+        <div class="app-l">L2 激活层</div>
+        <div class="app-name">打开 App</div>
+        <div class="app-desc">加载完整界面和功能说明</div>
+      </div>
+      <div class="app-card">
+        <div class="app-icon">⚙️</div>
+        <div class="app-l">L3 穿透层</div>
+        <div class="app-name">使用某功能</div>
+        <div class="app-desc">加载该功能的具体数据和脚本</div>
+      </div>
+    </div>
+    <div class="layers">
+      <div class="layer l1">
+        <div class="layer-badge">L1</div>
+        <div class="layer-content">
+          <div class="layer-title">发现层 — 系统启动时加载</div>
+          <div class="layer-desc">每个技能只有名字 + 一句描述，让 AI 知道「有哪些技能可以用」。6 个技能全部常驻，几乎不占上下文。</div>
+        </div>
+        <div class="layer-token">
+          <div class="token-num">~100</div>
+          <div class="token-unit">token/技能</div>
+        </div>
+      </div>
+      <div class="layer l2">
+        <div class="layer-badge">L2</div>
+        <div class="layer-content">
+          <div class="layer-title">激活层 — 任务匹配时加载</div>
+          <div class="layer-desc">判断当前任务需要哪个技能，加载该技能的完整指令、参数说明、注意事项。用完即释放，不同时保留多个。</div>
+        </div>
+        <div class="layer-token">
+          <div class="token-num">&lt;5000</div>
+          <div class="token-unit">token/技能</div>
+        </div>
+      </div>
+      <div class="layer l3">
+        <div class="layer-badge">L3</div>
+        <div class="layer-content">
+          <div class="layer-title">穿透层 — 实际执行时加载</div>
+          <div class="layer-desc">执行时才加载具体脚本、代码模板、Schema 定义、业务规范文件。执行完毕立即释放。</div>
+        </div>
+        <div class="layer-token">
+          <div class="token-num">按需</div>
+          <div class="token-unit">动态加载</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 六个技能 -->
+  <div class="card">
+    <h2>🛠️ 六个标准技能 — 一条完整的开发闭环</h2>
+    <p style="margin-bottom:4px">按顺序走完就是一个从「需求」到「交付」的完整软件开发流程：</p>
+    <div class="skills-grid">
+      <div class="skill-card sk-spec">
+        <div class="skill-cmd">/spec</div>
+        <div class="skill-name">需求规格</div>
+        <div class="skill-desc">先定「做什么」，再写代码。输出接口规范、验收标准。</div>
+        <div class="skill-insight">「没有规格的代码，是在猜测需求」</div>
+      </div>
+      <div class="skill-card sk-plan">
+        <div class="skill-cmd">/plan</div>
+        <div class="skill-name">任务规划</div>
+        <div class="skill-desc">把规格拆成原子任务，每个任务只做一件事，输出 DAG 依赖图。</div>
+        <div class="skill-insight">「拆得越细，出错越少」</div>
+      </div>
+      <div class="skill-card sk-build">
+        <div class="skill-cmd">/build</div>
+        <div class="skill-name">代码构建</div>
+        <div class="skill-desc">一次只实现一个功能切片，不贪多，写完要能运行。</div>
+        <div class="skill-insight">「每次只咬一口，不要贪大」</div>
+      </div>
+      <div class="skill-card sk-test">
+        <div class="skill-cmd">/test</div>
+        <div class="skill-name">测试生成</div>
+        <div class="skill-desc">写测试证明功能可用，不是「可能可用」。测试是功能存在的证明。</div>
+        <div class="skill-insight">「没有测试的功能不算完成」</div>
+      </div>
+      <div class="skill-card sk-review">
+        <div class="skill-cmd">/review</div>
+        <div class="skill-name">代码审查</div>
+        <div class="skill-desc">审查命名、结构、边界情况，提升代码健康度，不是找 bug。</div>
+        <div class="skill-insight">「好代码是改出来的」</div>
+      </div>
+      <div class="skill-card sk-ship">
+        <div class="skill-cmd">/ship</div>
+        <div class="skill-name">交付打包</div>
+        <div class="skill-desc">生成文档、打包部署、确认所有验收标准通过，完成交付。</div>
+        <div class="skill-insight">「跑通才算完成」</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 完整调用流程 -->
+  <div class="flow-dark">
+    <h3>⚙️ 一次完整任务的技能调用过程</h3>
+    <pre><span style="color:#6c7086"># 系统启动</span>
+L1 加载全部技能图标（600 token 常驻）
+<span style="color:#a6e3a1">✓ /spec /plan /build /test /review /ship</span>
+
+<span style="color:#6c7086"># Commander 收到「开发待办 App」，判断需要哪些技能</span>
+→ 需要 /spec + /plan + /build + /test
+
+<span style="color:#89b4fa">L2 激活 /spec</span>（4000 token）→ 生成接口规范 → 释放
+<span style="color:#89b4fa">L2 激活 /plan</span>（3500 token）→ 生成任务 DAG → 释放
+
+<span style="color:#6c7086"># BackendExpert 开始</span>
+<span style="color:#fab387">L2 激活 /build</span>（4500 token）→ 开始写数据库代码
+<span style="color:#fab387">L3 加载</span> scripts/build_template.py → 执行 → 释放
+→ 写完，/build 释放
+
+<span style="color:#6c7086"># TestExpert 开始</span>
+<span style="color:#a6e3a1">L2 激活 /test</span>（3000 token）→ 写 pytest 测试
+<span style="color:#a6e3a1">L3 加载</span> scripts/run_pytest.py → 执行 → 释放
+→ 5 passed ✅，/test 释放
+
+<span style="color:#6c7086"># 上下文始终精简，峰值不超过 L1(600) + L2(5000) = 5600 token 用于 Skills</span></pre>
+  </div>
+
+  <!-- Skill 文件结构 -->
+  <div class="card">
+    <h2>📁 Skill 文件结构</h2>
+    <p>每个技能是一个文件夹，SKILL.md 控制三层加载内容：</p>
+    <div class="file-tree">
+skills/<br>
+├── <span style="color:#89b4fa">spec/</span><br>
+│   ├── <span style="color:#a6e3a1">SKILL.md</span>      <span style="color:#6c7086">← L1 描述 + L2 完整指令都在这</span><br>
+│   ├── scripts/      <span style="color:#6c7086">← L3：可执行脚本</span><br>
+│   ├── references/   <span style="color:#6c7086">← L3：按需加载的业务规范</span><br>
+│   └── assets/       <span style="color:#6c7086">← L3：Schema 模板文件</span><br>
+├── <span style="color:#89b4fa">plan/</span><br>
+├── <span style="color:#89b4fa">build/</span><br>
+├── <span style="color:#89b4fa">test/</span><br>
+├── <span style="color:#89b4fa">review/</span><br>
+└── <span style="color:#89b4fa">ship/</span>
+    </div>
+    <div class="code-block cb-dark"><span style="color:#6c7086"># SKILL.md 内部结构（控制三层加载）</span>
+---
+name: build
+<span style="color:#89b4fa">l1_description</span>: <span style="color:#a6e3a1">"一次实现一个功能切片"</span>        <span style="color:#6c7086"># L1 常驻</span>
+<span style="color:#fab387">l2_instructions</span>: |                                   <span style="color:#6c7086"># L2 按需加载</span>
+  只实现当前任务，不要超出范围
+  每次提交只做一件事
+  写完要能运行，不允许留 TODO
+<span style="color:#f38ba8">l3_scripts</span>: ["scripts/run_build.py"]               <span style="color:#6c7086"># L3 执行时加载</span>
+---</div>
+  </div>
+
+  <div class="footer">
+    多角色 Agent 协作平台 · 实训项目 #21 &nbsp;|&nbsp;
+    <a href="系统架构.html">← 总架构图</a> &nbsp;|&nbsp;
+    <a href="专家池.html">④ 专家池</a>
+  </div>
+
+</div>
+</body>
+</html>
