@@ -40,8 +40,12 @@ backend/
 │   │                             真实运行 pytest，结果写入白板
 │   │
 │   └── validator_stub.py       ★ C 的接口桩（临时）
-│                                 C 未上线时：文件存在 + 测试无 FAILED = 通过
-│                                 .env 加 VALIDATOR_URL 后自动切换为真实调用
+│                                 validate(app_path, test_results) -> dict
+│                                 是同学 C 真正要实现的函数（对应接口③），
+│                                 现在这里放的是占位 Mock：文件存在 + 测试无
+│                                 FAILED = 通过；.env 加 VALIDATOR_URL 后
+│                                 自动切换为真实调用，调用方（validator_node）
+│                                 不用改一行代码
 │
 ├── tools/                      【同学 B 负责】
 │   ├── file_tools.py           ★ write_file / read_file
@@ -94,7 +98,8 @@ graph/workflow.py        ← LangGraph 状态机启动
   │         └── 写入 test_app.py，运行 pytest
   │
   ▼
-agents/validator_stub.py               C 的接口（暂用 Mock）
+graph/workflow.py:validator_node       调用 agents/validator_stub.py 的 validate()
+  │  validate() 是 C 要实现的函数（对应最终分工表接口③），现在是占位 Mock
   │  passed? → 打包 zip 返回
   │  failed? → 重试，最多 5 次
   ▼
