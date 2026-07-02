@@ -40,8 +40,12 @@ backend/
 │   │                             真实运行 pytest，结果写入白板
 │   │
 │   └── validator_stub.py       ★ C 的接口桩（临时）
-│                                 C 未上线时：文件存在 + 测试无 FAILED = 通过
-│                                 .env 加 VALIDATOR_URL 后自动切换为真实调用
+│                                 validate(app_path, test_results) -> dict
+│                                 是同学 C 真正要实现的函数（对应接口③），
+│                                 现在这里放的是占位 Mock：文件存在 + 测试无
+│                                 FAILED = 通过；.env 加 VALIDATOR_URL 后
+│                                 自动切换为真实调用，调用方（validator_node）
+│                                 不用改一行代码
 │
 ├── tools/                      【同学 B 负责】
 │   ├── file_tools.py           ★ write_file / read_file
@@ -94,7 +98,8 @@ graph/workflow.py        ← LangGraph 状态机启动
   │         └── 写入 test_app.py，运行 pytest
   │
   ▼
-agents/validator_stub.py               C 的接口（暂用 Mock）
+graph/workflow.py:validator_node       调用 agents/validator_stub.py 的 validate()
+  │  validate() 是 C 要实现的函数（对应最终分工表接口③），现在是占位 Mock
   │  passed? → 打包 zip 返回
   │  failed? → 重试，最多 5 次
   ▼
@@ -129,6 +134,24 @@ result = run("做一个待办事项桌面应用")
 ```
 VALIDATOR_URL=http://C的服务地址:端口
 ```
+
+**B 调 C 的接口（按 C 定的接口③格式给的，字段一个不多不少）：**
+
+```python
+# backend/agents/validator_stub.py::validate()
+# C 上线后，B 内部会这样调用（见 validator_url 分支）：
+requests.post(f"{VALIDATOR_URL}/validate", json={"app_path": app_path})
+# 输入：{"app_path": "./output/todo/app.py"}
+# 期望 C 返回：
+# {
+#   "passed": true,
+#   "logs": ["启动应用成功", "点击添加按钮成功", ...],
+#   "screenshot": "base64编码的截图",
+#   "failed_tests": []
+# }
+```
+
+C 上线前，`validate()` 走本地 Mock，返回结构与上面完全一致（`screenshot` 暂时为 `None`），保证 C 接进来那天，`validator_node`（[graph/workflow.py](graph/workflow.py)）不用改一行代码。
 
 ---
 
