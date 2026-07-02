@@ -85,11 +85,8 @@ def run(user_input: str, output_dir: str = "./output") -> dict:
         "error_message": None,              # 出错时记录原因，方便排查
     }
 
-    # 跑状态机
-    # graph.invoke 内部会依次触发 decompose_node（调 A 的 decompose()）
-    # 和 validator_node（调 C 的 validate()，见 backend/agents/validator_stub.py）。
-    # C 上线前 validate() 走本地 Mock；C 上线后只需在 .env 加 VALIDATOR_URL，
-    # 这里的调用逻辑不用改——对应最终分工表接口③（B 调 C：app_path → 测试报告）。
+    # 跑状态机（节点内部依次调用 A 的 decompose() 和 C 的 validate()，
+    # 见 workflow.py 的 decompose_node / validator_node）
     graph = build_graph()
     final_state = graph.invoke(initial_state)
 

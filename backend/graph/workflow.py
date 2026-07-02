@@ -27,7 +27,15 @@ def decompose_node(state: ProjectState) -> dict:
 
 
 def validator_node(state: ProjectState) -> dict:
-    """调用 C 的验证接口（C 未上线时走 Mock）"""
+    """把 C 的验证接口包装成 LangGraph 节点
+
+    validate() 是同学 C 真正要实现的函数（对应最终分工表接口③：
+    app_path → {passed, logs, screenshot, failed_tests}），现在
+    backend/agents/validator_stub.py 里放的是占位 Mock 实现。
+    这里只负责调用 + 把返回结果的字段映射进 ProjectState 白板，
+    C 上线后只需在 validator_stub.py 内部切换成真实调用（见其文件内注释），
+    本函数和整张图都不用改。
+    """
     from backend.agents.validator_stub import validate
     report = validate(
         app_path=state.get("frontend_path", ""),
