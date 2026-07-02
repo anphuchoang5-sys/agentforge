@@ -12,10 +12,10 @@ env/
 .env.*
 *.env
 
-# Node
+# Node（锚定到仓库根目录，避免误伤 backend/skills/build/ 这类同名目录）
 node_modules/
-dist/
-build/
+/dist/
+/build/
 .next/
 
 # 数据库文件（运行时生成）

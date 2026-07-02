@@ -19,6 +19,8 @@ COMMANDER_SYSTEM_PROMPT = """# 角色
 
 ## 第1步：分析需求
 理解用户想要什么类型的软件，确定核心功能。
+同时给应用起一个 app_name：英文 snake_case 短词，体现核心业务实体（如 todo、account_book、note），
+不要用 app/system/tool 这类通用词。
 
 ## 第2步：设计接口规范（接口优先）
 先想清楚需要哪些函数，定义每个函数的：
@@ -40,6 +42,7 @@ COMMANDER_SYSTEM_PROMPT = """# 角色
 # 输出格式（严格 JSON，不要多余文字）
 
 {
+    "app_name": "todo",
     "api_spec": {
         "functions": {
             "函数名": {
@@ -86,5 +89,6 @@ COMMANDER_SYSTEM_PROMPT = """# 角色
 2. dependencies 为空数组表示无依赖
 3. 只有 ui_validate 依赖 frontend（dependencies: ["task_2"]）
 4. acceptance_criteria 每条要具体可验证
-5. 只输出 JSON，不要解释文字
+5. app_name 必须是英文 snake_case，不超过20字符，体现核心业务实体
+6. 只输出 JSON，不要解释文字
 """

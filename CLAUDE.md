@@ -96,6 +96,29 @@ A  ──接口1──►  B  ──接口3──►  C
 
 Commander 第一步生成接口规范（函数名/参数/返回值），存入 ProjectState，BackendExpert 和 FrontendExpert 同时读取规范并行开发，不需要等对方完成。
 
+### 生成文件名通用化 + 应用名自动派生
+
+早期实现里 BackendExpert/FrontendExpert/TestExpert 的 System Prompt 和落盘路径写死了 `todo_db.py`/`todo_app.py`/`todo.db` 等待办事项专属命名，导致"软件工厂"实际上只能生成待办事项应用。
+模块内文件名（`db.py`/`app.py`/`test_app.py`/`app.db`）已改为领域无关的通用命名，跨应用复用同一套 Prompt。
+
+输出**目录名**（即应用名）不再由开发者硬编码，也不是靠 B 事后从函数名反推——`TaskDecomposition` 加了 `app_name: Optional[str]` 字段（[schemas.py](backend/agents/commander/schemas.py)），Commander 在理解需求的同时直接给出英文 snake_case 的应用名（[commander_prompt.py](backend/agents/commander/commander_prompt.py) 第1步 + 输出格式 + 规则5），比下游猜词更准，因为它本来就懂用户在说什么。
+
+解析逻辑（优先 `decomp.app_name`，经 `_sanitize_app_name` 清理；拿不到就退回 `_derive_app_name` 从 `api_spec.functions` 反推；两级都拿不到兜底 `generated_app`）放在 [output_naming.py](backend/agents/experts/output_naming.py) 的 `resolve_output_dir(base_dir, decomp)`，**不放在 `decompose_node` 里**：决定"代码写到哪个文件夹"是执行层（怎么落盘）的关注点，`decompose_node` 只做"调用 A 的 decompose，把结果写进白板"这一件事，不掺杂输出目录逻辑。
+
+实际调用方是专家池：`backend_expert_node`（[backend_expert.py](backend/agents/experts/backend_expert.py)）在 BackendExpert → TestExpert 顺序依赖链的起点解析一次，写回 `state["app_output_dir"]`，TestExpert 直接读；`frontend_expert_node` 与 BackendExpert 并行执行，独立调用 `resolve_output_dir` 算一遍（`resolve_output_dir` 是纯函数，同样的 `task_decomposition` 输入必然算出同样的目录，两边算的结果天然一致），但**不**把结果写回 `state["app_output_dir"]`——两个并行节点同时写同一个 state key 会在 LangGraph 里冲突。`ProjectState` 相应拆成 `output_base_dir`（`run()` 传入的基准目录，全流程不变）+ `app_output_dir`（解析后的真实目录，会被 BackendExpert 覆盖）两个字段，重试时 BackendExpert 重新执行也是从不变的 `output_base_dir` 算起，不会把路径越叠越深（如 `./output/todo/todo`）。
+
+### 修复 validator 每轮被触发两次的 bug
+
+`build_graph()`（[workflow.py](backend/graph/workflow.py)）里原来是两条独立边 `test_expert → validator` 和 `frontend_expert → validator`。LangGraph 的 `add_edge(A, C)`/`add_edge(B, C)` 不会自动合并成"等 A、B 都完成才触发 C 一次"，两条边各自独立生效——`frontend_expert` 路径短（`decompose → frontend_expert`，1 跳）永远比 `test_expert` 路径短（`decompose → backend_expert → test_expert`，2 跳）先完成，所以 `frontend_expert` 一完成就单独触发一次 `validator`，`test_expert` 完成又触发一次，`validator`/`count` 每轮实际跑两遍，`iteration_count` 消耗速度是设计值的两倍（5 轮变相只剩 2.5 轮）。
+
+修复过程中排除了一个更"正确"但实际会出更大问题的方案——LangGraph 支持 `add_edge([A, B], C)` 这种列表形式的汇合边，语义是"C 要等 A、B 都在本轮触发才放行"。测试发现这个方案在这个项目里会直接把重试循环卡死：`retry` 只跳回 `backend_expert`，`frontend_expert` 只在第一轮跑，第二轮起汇合条件永远凑不齐，`validator` 之后再也不会触发，`run()` 会静默提前结束（不报错，看起来像正常跑完，实际卡在半路）。
+
+最终方案：删掉 `frontend_expert → validator`，只留 `test_expert → validator`。安全性依赖 LangGraph 的 Pregel/BSP 执行模型——`backend_expert`/`frontend_expert` 同属一个 superstep，同一 superstep 里所有节点必须全部完成才能进入下一个 superstep（`test_expert` 所在的那步），所以哪怕 `test_expert` 只连着 `backend_expert` 这一条边，也不会在 `frontend_expert` 还没完成时抢跑；`validator_node` 读到的 `state["frontend_path"]` 必然已经写好。用真实 LangGraph 分别验证过：①原两条边方案每轮触发 2 次 validator；②列表汇合边方案重试从第二轮起直接卡死；③单边方案 5 轮全部失败时精确触发 5 次 validator，且 `backend_expert` 故意跑得比 `frontend_expert` 快也不会抢跑 `test_expert`。
+
+这个同步行为目前是 LangGraph 自己承认的未修复 bug（[langchain-ai/langgraph#6320](https://github.com/langchain-ai/langgraph/issues/6320)，2025-10-21 提交，confirmed bug，未修复），不是文档承诺的稳定契约，`workflow.py` 里对应位置留了详细注释。就算未来升级 LangGraph 后这个行为被"修复"，`validator_node` 用的是 `state.get("frontend_path", "")` 安全读取，最坏情况是那一轮验证失败触发重试，不会崩溃或产生脏数据。
+
+`app_name` 定义成 `Optional`（默认 `None`）是为了向后兼容——即使 Commander 某次没给出这个字段，`TaskDecomposition` 依然能正常构造，`resolve_output_dir` 自动降级到派生逻辑，不会因为 Commander 的输出不完整就整体报错。
+
 ### AI 模型策略
 
 **主力用云端 API**（DeepSeek-V3 / Claude Haiku / DeepSeek-Coder），本项目需要联网。Ollama 仅作离线兜底。
