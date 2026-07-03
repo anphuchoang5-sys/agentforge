@@ -11,6 +11,7 @@ from langchain_openai import ChatOpenAI
 from backend.graph.project_state import ProjectState
 from backend.tools.file_tools import write_file
 from backend.tools.command_tools import run_command
+from backend.tools.llm_logging import timed_invoke
 
 load_dotenv()
 
@@ -77,11 +78,13 @@ def test_expert_node(state: ProjectState) -> dict:
         temperature=0.1,
     )
 
-    response = llm.invoke(
+    response = timed_invoke(
+        llm,
         [
             {"role": "system", "content": TEST_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
-        ]
+        ],
+        caller="TestExpert",
     )
 
     test_code = _extract_code(response.content)

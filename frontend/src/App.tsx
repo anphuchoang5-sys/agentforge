@@ -1,6 +1,7 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAppStore, type AgentStatus } from '@/store/appStore'
 import { startAgentWorkflow } from '@/lib/agentClient'
+import { fetchTokenMetrics, type TokenMetric } from '@/lib/api'
 import {
   BarChart,
   Bar,
@@ -186,16 +187,6 @@ const EXAMPLE_PROMPTS = [
   '做一个天气预报查询工具，输入城市名显示天气信息',
 ]
 
-// ============ Token 消耗 Mock 数据 ============
-
-const TOKEN_DATA = [
-  { name: 'Commander', tokens: 1200 },
-  { name: 'Backend', tokens: 600 },
-  { name: 'Frontend', tokens: 400 },
-  { name: 'Test', tokens: 300 },
-  { name: 'UIValidator', tokens: 200 },
-]
-
 // ============ 主组件 ============
 
 function App() {
@@ -214,6 +205,20 @@ function App() {
     },
     [logs.length]
   )
+
+  // Token 消耗统计：接的是真实后端 /api/metrics/tokens，不是假数据。
+  // 页面加载时拉一次；每次任务跑完（isRunning: true → false）再拉一次刷新最新数据。
+  const [tokenData, setTokenData] = useState<TokenMetric[]>([])
+  const [tokenError, setTokenError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchTokenMetrics()
+      .then((data) => {
+        setTokenData(data)
+        setTokenError(null)
+      })
+      .catch((err) => setTokenError(err instanceof Error ? err.message : String(err)))
+  }, [isRunning])
 
   const handleRun = () => {
     const input = userInput.trim()
@@ -388,40 +393,50 @@ function App() {
           <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">
             📊 Token 消耗统计
           </h2>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart
-              data={TOKEN_DATA}
-              margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis
-                dataKey="name"
-                tick={{ fontSize: 12, fill: '#64748b' }}
-                axisLine={{ stroke: '#cbd5e1' }}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 12, fill: '#64748b' }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip
-                contentStyle={{
-                  borderRadius: '8px',
-                  border: '1px solid #e2e8f0',
-                  fontSize: '13px',
-                }}
-                formatter={(value: number) => [`${value.toLocaleString()} tokens`, '消耗量']}
-              />
-              <Bar dataKey="tokens" fill="#3b82f6" radius={[4, 4, 0, 0]}>
-                <LabelList
-                  dataKey="tokens"
-                  position="top"
-                  style={{ fontSize: 12, fontWeight: 600, fill: '#3b82f6' }}
+          {tokenError ? (
+            <div className="h-[280px] flex items-center justify-center text-sm text-red-500">
+              无法获取 Token 统计: {tokenError}
+            </div>
+          ) : tokenData.length === 0 ? (
+            <div className="h-[280px] flex items-center justify-center text-sm text-slate-400">
+              还没有调用记录，跑一次任务后这里会显示真实 Token 消耗
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart
+                data={tokenData}
+                margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 12, fill: '#64748b' }}
+                  axisLine={{ stroke: '#cbd5e1' }}
+                  tickLine={false}
                 />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+                <YAxis
+                  tick={{ fontSize: 12, fill: '#64748b' }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '13px',
+                  }}
+                  formatter={(value: number) => [`${value.toLocaleString()} tokens`, '消耗量']}
+                />
+                <Bar dataKey="tokens" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                  <LabelList
+                    dataKey="tokens"
+                    position="top"
+                    style={{ fontSize: 12, fontWeight: 600, fill: '#3b82f6' }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </main>
 

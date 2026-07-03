@@ -86,10 +86,11 @@ def get_recent_logs(limit: int = 50) -> list[dict]:
     """获取最近的调用记录（D的前端通过API调这个）"""
     conn = _get_db()
     try:
-        rows = conn.execute(
+        cursor = conn.execute(
             "SELECT * FROM call_logs ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
-        columns = [desc[0] for desc in rows.description]
+        )
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
         return [dict(zip(columns, row)) for row in rows]
     finally:
         conn.close()

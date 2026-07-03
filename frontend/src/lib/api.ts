@@ -24,3 +24,18 @@ export async function submitTask(userInput: string): Promise<SubmitResponse> {
 export function connectTaskWebSocket(taskId: string): WebSocket {
   return new WebSocket(`${WS_BASE}/ws/tasks/${taskId}`)
 }
+
+export interface TokenMetric {
+  name: string
+  tokens: number
+}
+
+// 连不上就抛错，调用方决定怎么展示（不做假数据兜底）
+export async function fetchTokenMetrics(): Promise<TokenMetric[]> {
+  const resp = await fetch(`${API_BASE}/api/metrics/tokens`)
+  if (!resp.ok) {
+    throw new Error(`获取 Token 统计失败: HTTP ${resp.status}`)
+  }
+  const data = await resp.json()
+  return data.data
+}

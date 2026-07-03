@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.observability import setup_tracing
-from backend.api.routes import tasks, websocket
+from backend.api.routes import tasks, websocket, metrics
 
 setup_tracing()
 
@@ -26,6 +26,7 @@ app.add_middleware(
 
 app.include_router(tasks.router)
 app.include_router(websocket.router)
+app.include_router(metrics.router)
 
 
 @app.get("/api/health")

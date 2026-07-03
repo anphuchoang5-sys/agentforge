@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from backend.graph.project_state import ProjectState
 from backend.tools.file_tools import write_file
+from backend.tools.llm_logging import timed_invoke
 from backend.agents.experts.output_naming import resolve_output_dir
 
 load_dotenv()
@@ -75,11 +76,13 @@ def backend_expert_node(state: ProjectState) -> dict:
         temperature=0.2,
     )
 
-    response = llm.invoke(
+    response = timed_invoke(
+        llm,
         [
             {"role": "system", "content": BACKEND_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
-        ]
+        ],
+        caller="BackendExpert",
     )
 
     code = _extract_code(response.content)
