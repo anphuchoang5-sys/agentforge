@@ -196,8 +196,11 @@ def validate(
     all_logs.extend(logs)
     all_failed.extend(failed)
 
-    # 4. LLM 验收标准核对（桩）
-    code_content = checkers.read_app_code(app_path) if criteria else None
+    # 4. LLM 验收标准核对
+    # 读取整个项目目录的代码（不只是 app.py，还包含 db.py 等），
+    # 这样 LLM 能看到后端函数实现，判断验收标准是否满足
+    app_dir = str(Path(app_path).parent) if Path(app_path).is_file() else app_path
+    code_content = checkers.read_app_code(app_dir) if criteria else None
     passed, logs, failed = checkers.llm_check(app_path, criteria, code_content)
     all_logs.extend(logs)
     all_failed.extend(failed)
