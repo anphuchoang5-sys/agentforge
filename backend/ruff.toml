@@ -1,0 +1,26 @@
+# ruff.toml — 同学C 的 ruff 配置
+# 对齐 checkers.ruff_check：只看 E/F 级错误，放宽常见误报
+# 调用方式: ruff check --config backend/ruff.toml <app_path>
+
+[lint]
+# E = pycodestyle 错误（语法/格式问题）
+# F = pyflakes（未使用变量、导入错误等）
+# 不选 W（warning 太吵）、I（import 排序，生成代码不强制）
+select = ["E", "F"]
+
+# 忽略项（生成代码常见，不影响运行）
+ignore = [
+    "E501",   # 行太长 — 生成代码经常超 88 字符，不阻断
+    "E402",   # import 不在文件顶部 — 生成代码可能有条件导入
+    "E701",   # 多语句一行 — 简单 if 后跟单语句常见
+    "E722",   # 裸 except — 生成代码常用，不强制
+    "E741",   # 变量名歧义（如 l/I/O）— 命名问题不阻断
+    "F401",   # 未使用 import — 仅警告不阻断（severity=warning）
+    "F841",   # 局部变量未使用 — 仅警告不阻断
+    "E999",   # 保留：语法错误必须报（不忽略）
+]
+
+[lint.per-file-ignores]
+# 测试文件放宽
+"**/test_*.py" = ["F401", "F811"]
+"**/tests/**" = ["F401", "F811"]

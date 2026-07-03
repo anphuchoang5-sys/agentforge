@@ -47,6 +47,9 @@ desktop.ini
 secrets.json
 credentials.json
 
+# 自测截图（运行时生成，不提交）
+_selftest_*.png
+
 # 个人模板/笔记（不对外公开）
 分工指南模板.md
 chosen/最终分工表.docx
