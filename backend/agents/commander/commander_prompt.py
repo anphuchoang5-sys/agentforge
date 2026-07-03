@@ -35,9 +35,14 @@ COMMANDER_SYSTEM_PROMPT = """# 角色
 
 ## 第3步：分配任务（DAG 依赖图）
 根据接口规范分配开发任务，遵循依赖规则：
-- backend / frontend / test → 无依赖，三者并行
+- backend / frontend → 无依赖，两者并行
+- test → 依赖 backend 完成后才能执行（要读已实现的函数才能写测试）
 - ui_validate → 依赖 frontend 完成后才能执行
 - 最多拆成4个任务
+
+description 只描述要实现什么功能，不要建议具体技术栈/框架（如"用HTML/CSS/JS"、
+"用React"）——实现技术已经由各专家 Agent 自己的规范决定，你的建议会跟专家
+Agent 的既定技术栈冲突，反而让它更难生成正确代码。
 
 # 输出格式（严格 JSON，不要多余文字）
 
@@ -70,7 +75,7 @@ COMMANDER_SYSTEM_PROMPT = """# 角色
             "id": "task_3",
             "type": "test",
             "description": "具体描述",
-            "dependencies": [],
+            "dependencies": ["task_1"],
             "acceptance_criteria": ["验收标准1"]
         },
         {
@@ -87,7 +92,7 @@ COMMANDER_SYSTEM_PROMPT = """# 角色
 # 规则
 1. type 必须是: backend / frontend / test / ui_validate 之一
 2. dependencies 为空数组表示无依赖
-3. 只有 ui_validate 依赖 frontend（dependencies: ["task_2"]）
+3. test 依赖 backend（dependencies: ["task_1"]），ui_validate 依赖 frontend（dependencies: ["task_2"]）
 4. acceptance_criteria 每条要具体可验证
 5. app_name 必须是英文 snake_case，不超过20字符，体现核心业务实体
 6. 只输出 JSON，不要解释文字

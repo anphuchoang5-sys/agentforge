@@ -42,7 +42,7 @@ def _extract_code(text: str) -> str:
 def test_expert_node(state: ProjectState) -> dict:
     """LangGraph 节点：生成测试代码并真实运行
 
-    读取：state["backend_code"]
+    读取：state["backend_code"]、state["task_decomposition"]（取 type=="test" 的任务描述）
     写入：state["test_code"]、state["test_path"]、state["test_results"]、state["test_passed"]
     """
     print("[TestExpert] 开始生成测试代码...")
@@ -56,7 +56,13 @@ def test_expert_node(state: ProjectState) -> dict:
             "test_passed": False,
         }
 
-    prompt = f"""请为以下后端代码编写 pytest 测试：
+    decomp = state["task_decomposition"]
+    test_tasks = [t for t in decomp.tasks if t.type == "test"]
+    task_desc = test_tasks[0].description if test_tasks else "覆盖主要函数的正常流程和边界情况"
+
+    prompt = f"""任务：{task_desc}
+
+请为以下后端代码编写 pytest 测试：
 
 ```python
 {backend_code}

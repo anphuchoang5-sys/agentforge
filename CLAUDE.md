@@ -140,7 +140,7 @@ Commander 第一步生成接口规范（函数名/参数/返回值），存入 P
 | **Microsoft Agent Framework 1.0+** | 命名模糊（可能是 AutoGen 0.4+ 或 Semantic Kernel），API 频繁变动，文档不稳定 | **LangGraph** | 生产级状态机，有向图 + 条件边，MemorySaver 断点续跑，生态最成熟 |
 | **CAMEL** | 学术框架，无生产级工作流控制，无条件边/循环保护机制 | **LangGraph** | 同上，CAMEL 仅适合研究复现 |
 | **Dapr**（可选） | 引入分布式基础设施，2 周配置成本过高 | **asyncio.Queue** | 单机项目不需要分布式消息队列 |
-| **OpenClaw** | 文档称"60天12.8万Star"——数据极可疑，GitHub 无法找到该项目，极可能是 LLM 幻觉参考 | **pywinauto** + **Playwright** | pywinauto 走 Win32 Accessibility API 不猜坐标；Playwright 是 Web UI 测试标杆 |
+| ~~OpenClaw~~（已勘误，见下方说明） | ~~曾误判为幻觉项目~~ | 保留 OpenClaw，C 评估后决定是否搭配 pywinauto/Playwright | OpenClaw（openclaw/openclaw）真实存在，2026年1月底发布后涨星速度是 GitHub 史上最快之一。是否用它做桌面控制，取决于 C 实测 `windows-ui-automation` skill 是否走 Windows UI Automation COM API（类似 pywinauto 的 uia backend，不依赖坐标），还是走坐标/图像识别（类似 PyAutoGUI，CLAUDE.md 明确要避免的模式）；另外 OpenClaw 本身是一整套独立 Agent 运行时，接入成本比直接 import pywinauto 这个 Python 库更高，需要一并评估 |
 | **Qdrant / Milvus** | Milvus 部署复杂（需独立服务），演示项目过重 | **ChromaDB** | 纯 Python，零配置，本地文件运行，演示够用 |
 | **agent-skills（Gemini）** | 无法直接 pip install，需手动集成 Skill 机制 | 参考其 SKILL.md 结构 **自研 Skill 层** | 三层渐进式加载机制是核心设计思路，值得借鉴 |
 | **裸 SQLite 记忆** | 无向量检索，跨会话召回困难 | **mem0ai/mem0** | 专为 Agent 记忆设计，底层用 SQLite，自动向量化 |
@@ -469,12 +469,12 @@ ollama serve  # 默认监听 localhost:11434
 |------|----------|--------|--------|--------|
 | **Playwright** | Web 应用 UI 测试 | microsoft/playwright (67k+) | ✅ 元素选择器，最稳定 | ⭐⭐⭐⭐⭐ 首选 |
 | **pywinauto** | Windows 原生 GUI（Tkinter/PyQt） | pywinauto/pywinauto (4k+) | ✅ Win32 API，不依赖坐标 | ⭐⭐⭐⭐ |
+| **OpenClaw**（真实存在，此前误判为幻觉） | 桌面自动化 | openclaw/openclaw | 待 C 实测：`windows-ui-automation` skill 号称走 Windows UI Automation COM API（类似 pywinauto uia backend），但接入的是一整套独立 Agent 运行时，成本高于直接 import pywinauto | ⭐⭐⭐（需 C 评估后定级） |
 | PyAutoGUI | 跨平台截图兜底 | asweigart/pyautogui (11k+) | ⚠️ 坐标依赖，分辨率敏感 | ⭐⭐（仅截图） |
-| ~~OpenClaw~~ | ~~跨平台~~ | 不存在 | ❌ 参考文档中的幻觉项目 | 不可用 |
 
 **推荐策略**：
 - 演示场景优先生成 **Web 应用**（Playwright 测试最稳，可录制视频）
-- 桌面应用用 pywinauto（Win32 Accessibility API > 截图坐标）
+- 桌面应用优先 pywinauto（Win32 Accessibility API > 截图坐标），OpenClaw 作为备选方案由 C 评估是否替换/搭配使用
 - PyAutoGUI 只做截图存档，不做元素交互
 
 ---
@@ -633,7 +633,7 @@ ollama serve  # 默认监听 localhost:11434
 | 桌面自动化不稳定 | 演示用 **Web 应用**（Playwright 最稳），桌面控制作加分项 |
 | LangGraph 学习曲线 | Day 1-2 专门跑通 StateGraph Hello World，先单 Node 再多 Node |
 | mem0 集成复杂 | Week 2 再引入；Week 1 用 LangGraph 内置 MemorySaver 先跑通主流程 |
-| 原题 OpenClaw 不存在 | 已用 pywinauto 替代，Win32 API 更可靠 |
+| OpenClaw 是否适合桌面控制未验证 | OpenClaw 真实存在（此前误判为幻觉，已勘误），但接入成本高于 pywinauto；C 先用 pywinauto 跑通主链路，OpenClaw 作为备选评估项 |
 | 两周时间紧 | **必做**：Commander→Expert 主链路 + 前端可视化；**选做**：Validator 闭环、mem0、桌面 UI 验证 |
 
 ---

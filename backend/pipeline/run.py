@@ -9,8 +9,10 @@ run(user_input) 是 B 对外暴露的唯一接口：
 
 import os
 import zipfile
+from typing import Callable, Optional
 from backend.graph.project_state import ProjectState
 from backend.graph.workflow import build_graph
+from backend.api.observability import get_tracer, node_span
 
 
 def _zip_output(output_dir: str) -> str:
@@ -26,7 +28,11 @@ def _zip_output(output_dir: str) -> str:
     return zip_path
 
 
-def run(user_input: str, output_dir: str = "./output") -> dict:
+def run(
+    user_input: str,
+    output_dir: str = "./output",
+    on_event: Optional[Callable[[str, dict], None]] = None,
+) -> dict:
     """全流程入口：用户需求 → 代码生成 → 返回交付物
 
     Args:
@@ -34,6 +40,10 @@ def run(user_input: str, output_dir: str = "./output") -> dict:
         output_dir: 代码落盘的根目录（基准目录）。
             实际子目录名由 Commander 拆解出的接口规范自动派生
             （如 create_todo/delete_todo → todo/），不需要调用方手动指定。
+        on_event: 可选回调，每个 LangGraph 节点跑完立刻触发一次，
+            签名 (node_name: str, node_output: dict) -> None。
+            不传就是原来的行为（一次性跑完再返回），供 API 层做实时推送用，
+            不传不影响任何现有调用方（比如直接 import run() 的测试脚本）。
 
     Returns:
         {
@@ -88,22 +98,36 @@ def run(user_input: str, output_dir: str = "./output") -> dict:
     # 跑状态机（节点内部依次调用 A 的 decompose() 和 C 的 validate()，
     # 见 workflow.py 的 decompose_node / validator_node）
     graph = build_graph()
-    final_state = graph.invoke(initial_state)
+    tracer = get_tracer()
 
-    # 打包交付物（用 BackendExpert 解析后的真实目录，不是最初的基准目录）
-    final_output_dir = final_state["app_output_dir"]
-    deliverable = _zip_output(final_output_dir)
+    with tracer.start_as_current_span("run", attributes={"user_input": user_input}):
+        if on_event is None:
+            final_state = graph.invoke(initial_state)
+        else:
+            # stream_mode="updates" 每个节点跑完就吐一次 {节点名: 该节点返回的增量dict}，
+            # 不用等整张图跑完，可以实时往外推。手动把每次增量合并成完整 final_state
+            # （LangGraph 内部 invoke() 也是做的同样的合并，这里只是自己再做一遍）。
+            final_state = dict(initial_state)
+            for chunk in graph.stream(initial_state, stream_mode="updates"):
+                for node_name, node_output in chunk.items():
+                    final_state.update(node_output)
+                    with node_span(node_name):
+                        on_event(node_name, node_output)
 
-    result = {
-        "deliverable": deliverable,
-        "app_path": final_state.get("frontend_path"),
-        "test_report": {
-            "backend_generated": bool(final_state.get("backend_code")),
-            "frontend_generated": bool(final_state.get("frontend_code")),
-            "iterations": final_state.get("iteration_count", 0),
-            "validation_passed": final_state.get("validation_passed", False),
-        },
-    }
+        # 打包交付物（用 BackendExpert 解析后的真实目录，不是最初的基准目录）
+        final_output_dir = final_state["app_output_dir"]
+        deliverable = _zip_output(final_output_dir)
+
+        result = {
+            "deliverable": deliverable,
+            "app_path": final_state.get("frontend_path"),
+            "test_report": {
+                "backend_generated": bool(final_state.get("backend_code")),
+                "frontend_generated": bool(final_state.get("frontend_code")),
+                "iterations": final_state.get("iteration_count", 0),
+                "validation_passed": final_state.get("validation_passed", False),
+            },
+        }
 
     print(f"\n[run] 完成！交付物: {deliverable}")
     return result

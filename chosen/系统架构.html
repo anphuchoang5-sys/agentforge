@@ -445,17 +445,18 @@ body {
     <div class="row-bottom">
       <!-- AI 模型层 -->
       <div class="layer l-llm">
-        <div class="layer-label">⑧ AI 模型层 · Ollama 本地运行</div>
+        <div class="layer-label">⑧ AI 模型层 · DeepSeek API 优先，Ollama 离线兜底</div>
         <div class="boxes">
-          <a class="box link" href="https://github.com/ollama/ollama" target="_blank" title="→ github.com/ollama/ollama">
-            <div class="n">Qwen2.5-Coder:7b</div>
-            <div class="t">Expert Agent · 6GB 显存<br>代码生成与推理</div>
+          <a class="box link" href="https://platform.deepseek.com" target="_blank" title="→ platform.deepseek.com">
+            <div class="n">DeepSeek-V3 / deepseek-chat</div>
+            <div class="t">Commander / Validator · 云端 API<br>需求拆解与验收判断</div>
           </a>
-          <a class="box link" href="https://github.com/ollama/ollama" target="_blank" title="→ github.com/ollama/ollama">
-            <div class="n">Qwen2.5:14b</div>
-            <div class="t">Commander · 10GB 显存<br>任务规划推理</div>
+          <a class="box link" href="https://platform.deepseek.com" target="_blank" title="→ platform.deepseek.com">
+            <div class="n">DeepSeek-Coder</div>
+            <div class="t">Expert Agent · 云端 API<br>代码生成专用</div>
           </a>
         </div>
+        <div class="skills-sub" style="color:#a5b4fc;">离线兜底：Qwen2.5-Coder:7b（Ollama 本地运行，无网络/无 API Key 时启用）</div>
       </div>
 
       <!-- 可观测层 -->

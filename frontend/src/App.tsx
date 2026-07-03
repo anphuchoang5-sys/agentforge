@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useAppStore, type AgentStatus } from '@/store/appStore'
-import { startAgentWorkflow } from '@/mocks/mockWebSocket'
+import { startAgentWorkflow } from '@/lib/agentClient'
 
 // ============ 图标组件 ============
 
