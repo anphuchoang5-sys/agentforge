@@ -6,7 +6,7 @@ checkers.py — 验证者四项检查实现
     ① compile_check  — 编译检查（py_compile，能否 import）
     ② ruff_check     — ruff 静态检查（语法/未使用变量等）
     ③ pytest_check   — 读取 TestExpert 的 pytest 结果（桩，等 B 接入）
-    ④ llm_check      — LLM 逐条核对验收标准（桩，等 A 的 ollama_client 接入）
+    ④ llm_check      — LLM 逐条核对验收标准（已接入 A 的 ollama_client）
 
 每项返回统一格式: (passed, logs, failed_tests)
     passed: bool        — 该项是否通过（warning 不算失败）
@@ -161,26 +161,108 @@ def pytest_check(app_path: str, pytest_result_path: str = None) -> Tuple[bool, L
     return True, logs, []
 
 
-# ===== ④ LLM 验收标准核对（桩） =====
+# ===== ④ LLM 验收标准核对 =====
 
 def llm_check(
     app_path: str,
     criteria: List[str] = None,
     code_content: str = None,
 ) -> Tuple[bool, List[str], List[FailedTest]]:
-    """LLM 逐条核对验收标准（桩函数）
+    """LLM 逐条核对验收标准
 
-    MVP 阶段: 返回跳过。Prompt 已写好（validator_prompt.py），待接入 A 的 ollama_client。
-    后续接入:
-        from backend.agents.commander.ollama_client import generate
-        from .validator_prompt import build_check_prompt
-        raw = generate(build_check_prompt(criteria, code_content), "Qwen2.5-Coder:7B")
-        # 解析 raw JSON → results
+    调用 A 的 ollama_client.generate()，用 validator_prompt.py 的提示词，
+    让 LLM 逐条判断每条验收标准是否在代码中实现。
+
+    降级策略:
+        - 无验收标准 → 跳过（返回通过）
+        - ollama_client 不可用（Ollama 未启动 / 无 DeepSeek Key）→ 降级为桩（不阻断）
     """
-    logs = ["[llm] ⏭️ 桩函数：ollama_client 未接入，跳过（返回通过）"]
-    if criteria:
-        logs.append(f"[llm] 待核对 {len(criteria)} 条验收标准（接入后执行）")
-    return True, logs, []
+    logs = []
+    failed: List[FailedTest] = []
+
+    # 无验收标准 → 直接跳过
+    if not criteria:
+        logs.append("[llm] ⏭️ 无验收标准，跳过")
+        return True, logs, failed
+
+    logs.append(f"[llm] 核对 {len(criteria)} 条验收标准...")
+
+    # 准备代码内容
+    if not code_content:
+        code_content = read_app_code(app_path)
+
+    # 调用 A 的 ollama_client
+    try:
+        from backend.agents.commander.ollama_client import generate
+    except ImportError:
+        logs.append("[llm] ⚠️ ollama_client 导入失败，降级为桩（返回通过）")
+        for c in criteria:
+            logs.append(f"[llm]   - {c}（未检查）")
+        return True, logs, failed
+
+    # 组装 prompt
+    try:
+        from .validator_prompt import build_check_prompt
+    except ImportError:
+        from validator_prompt import build_check_prompt
+
+    prompt = build_check_prompt(criteria, code_content)
+
+    # 调用 LLM
+    try:
+        raw = generate(prompt)
+    except Exception as e:
+        # LLM 不可用 → 降级为 warning（不阻断流程）
+        msg = f"LLM 调用失败: {type(e).__name__}: {str(e)[:150]}"
+        logs.append(f"[llm] ⚠️ {msg}")
+        failed.append(FailedTest(name="llm", reason=msg, severity="warning"))
+        return True, logs, failed  # warning 不阻断
+
+    # 解析 LLM 返回的 JSON
+    logs.append(f"[llm] LLM 返回: {raw[:200]}...")
+    try:
+        # LLM 可能返回带 ```json 包裹的内容，提取 JSON 部分
+        json_str = raw.strip()
+        if "```json" in json_str:
+            json_str = json_str.split("```json")[1].split("```")[0].strip()
+        elif "```" in json_str:
+            json_str = json_str.split("```")[1].split("```")[0].strip()
+
+        result = json.loads(json_str)
+        results = result.get("results", [])
+        all_passed = result.get("all_passed", True)
+        summary = result.get("summary", "")
+
+        # 逐条记录
+        for item in results:
+            criteria_text = item.get("criteria", "?")
+            verdict = item.get("verdict", "unknown")
+            evidence = item.get("evidence", "")
+            if verdict == "passed":
+                logs.append(f"[llm] ✅ {criteria_text} — {evidence[:80]}")
+            elif verdict in ("failed", "partial"):
+                logs.append(f"[llm] ❌ {criteria_text} — {evidence[:80]}")
+                failed.append(FailedTest(
+                    name=f"llm:{criteria_text}",
+                    reason=evidence[:200],
+                    severity="error",
+                ))
+            else:
+                logs.append(f"[llm] ⚠️ {criteria_text} — verdict={verdict}")
+
+        if summary:
+            logs.append(f"[llm] 📋 {summary}")
+
+        passed = len(failed) == 0
+        return passed, logs, failed
+
+    except (json.JSONDecodeError, KeyError) as e:
+        # JSON 解析失败 → 不阻断，把原始返回记在日志里
+        msg = f"LLM 返回解析失败: {type(e).__name__}: {str(e)[:100]}"
+        logs.append(f"[llm] ⚠️ {msg}")
+        logs.append(f"[llm] 原始返回: {raw[:500]}")
+        failed.append(FailedTest(name="llm", reason=msg, severity="warning"))
+        return True, logs, failed  # warning 不阻断
 
 
 # ===== 读取代码内容（供 LLM 检查用） =====
