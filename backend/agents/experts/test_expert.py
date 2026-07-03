@@ -44,7 +44,9 @@ def test_expert_node(state: ProjectState) -> dict:
     """LangGraph 节点：生成测试代码并真实运行
 
     读取：state["backend_code"]、state["task_decomposition"]（取 type=="test" 的任务描述）
-    写入：state["test_code"]、state["test_path"]、state["test_results"]、state["test_passed"]
+    写入：state["test_code"]、state["test_path"]、state["test_results"]、state["test_passed"]、
+        state["pytest_report_path"]（JSON 格式，供 C 的 pytest_check 读取真实测试结果，
+        不再是"跑了但没人看"的状态，见 problem.md 第17条）
     """
     print("[TestExpert] 开始生成测试代码...")
 
@@ -55,6 +57,7 @@ def test_expert_node(state: ProjectState) -> dict:
             "test_path": None,
             "test_results": "跳过：后端代码不存在",
             "test_passed": False,
+            "pytest_report_path": None,
         }
 
     decomp = state["task_decomposition"]
@@ -90,16 +93,20 @@ def test_expert_node(state: ProjectState) -> dict:
     test_code = _extract_code(response.content)
     test_path = write_file(f"{state['app_output_dir']}/test_app.py", test_code)
 
-    # 真实运行 pytest
+    # 真实运行 pytest，顺带生成 JSON 格式报告（--json-report）供 C 的 pytest_check 读取，
+    # 不然 C 那边永远拿不到结构化的真实测试结果，只能靠桩函数跳过
     print("[TestExpert] 运行 pytest...")
+    report_filename = "pytest_report.json"
     result = run_command(
-        "python -m pytest test_app.py -v --tb=short",
+        f"python -m pytest test_app.py -v --tb=short --json-report --json-report-file={report_filename}",
         cwd=state["app_output_dir"],
         timeout=30,
     )
 
     test_results = result["stdout"] + result["stderr"]
     test_passed = result["success"]
+    report_path = f"{state['app_output_dir']}/{report_filename}"
+    pytest_report_path = report_path if os.path.exists(report_path) else None
 
     print(f"[TestExpert] 测试{'通过' if test_passed else '失败'}")
     return {
@@ -107,4 +114,5 @@ def test_expert_node(state: ProjectState) -> dict:
         "test_path": test_path,
         "test_results": test_results,
         "test_passed": test_passed,
+        "pytest_report_path": pytest_report_path,
     }

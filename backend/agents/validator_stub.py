@@ -13,20 +13,39 @@ C 的对外接口（来自分工表）：
 """
 
 import os
+from typing import List, Optional
 
 
-def validate(app_path: str, test_results: str = "") -> dict:
+def validate(
+    app_path: str,
+    test_results: str = "",
+    criteria: Optional[List[str]] = None,
+    code_content: Optional[str] = None,
+    pytest_result_path: Optional[str] = None,
+) -> dict:
     """调用 C 的验证接口，拿到测试报告
 
     优先直接 Python 调用（同仓库，零配置）；
     VALIDATOR_URL 存在时走 HTTP（跨机器部署）；
     都不行就降级 Mock。
+
+    criteria: Commander 拆解出的验收标准（来自 task_decomposition.tasks[].acceptance_criteria，
+        由 workflow.py::validator_node 拍平后传入），转发给 C 的 llm_check 逐条核对。
+    code_content: workflow.py::validator_node 从 ProjectState 里拼好的完整代码
+        （backend_code + frontend_code + test_code），转发给 C 避免她重新读硬盘+截断
+        （见 problem.md 第16条）。
+    pytest_result_path: TestExpert 用 `pytest --json-report` 生成的 JSON 报告路径，
+        转发给 C 读取真实测试结果（见 problem.md 第17条）。
     """
     # 策略1：直接 Python 调用 C 的 validate()（同仓库，推荐）
     try:
         from backend.agents.validator import validate as c_validate
-        from backend.agents.validator.schemas import TestReport
-        report = c_validate(app_path=app_path)
+        report = c_validate(
+            app_path=app_path,
+            criteria=criteria,
+            code_content=code_content,
+            pytest_result_path=pytest_result_path,
+        )
         # TestReport → dict（和原来的 Mock 返回格式一致）
         return report.model_dump()
     except Exception as e:
@@ -39,7 +58,7 @@ def validate(app_path: str, test_results: str = "") -> dict:
             import requests
             resp = requests.post(
                 f"{validator_url}/validate",
-                json={"app_path": app_path},
+                json={"app_path": app_path, "criteria": criteria},
                 timeout=60,
             )
             resp.raise_for_status()

@@ -28,6 +28,7 @@ class ProjectState(TypedDict):
     test_path: Optional[str]
     test_results: Optional[str]             # "5 passed, 0 failed"
     test_passed: Optional[bool]
+    pytest_report_path: Optional[str]       # pytest --json-report 生成的 JSON 报告路径，供 C 的 pytest_check 读取
 
     # ── Validator（C）写 ────────────────────────
     validation_passed: Optional[bool]

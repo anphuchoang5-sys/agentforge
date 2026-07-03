@@ -47,6 +47,9 @@ desktop.ini
 secrets.json
 credentials.json
 
+# 流程运行产物（run() 生成的应用代码/zip，机器特定，不提交）
+/output/
+
 # 自测截图（运行时生成，不提交）
 _selftest_*.png
 

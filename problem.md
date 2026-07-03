@@ -2,7 +2,7 @@
 
 > 记录当前实现和文档承诺之间的落差，不是待办事项列表，是"诚实记账"——
 > 方便后续决定哪些要补、哪些接受现状、哪些要改文档降低承诺。
-> 更新日期：2026-07-03
+> 更新日期：2026-07-03（晚间修订：API 层 + 真实 Validator 已接入）
 
 ---
 
@@ -27,10 +27,11 @@ Commander 生成的任何调度信息。
   但这只是让**生成的数据更准确**，没有让**执行引擎去读它**
 
 ### 2. `SubTask.acceptance_criteria` 生成了但从未被使用
-- **在哪**：每个任务都带一份验收标准，设计给 Validator 逐条比对
-- **实际情况**：`validator_stub.py` 的 Mock 实现只检查"文件存在+测试无FAILED"，
-  完全不读 `task_decomposition`，看不到验收标准
-- **状态**：未修复，等 C 实现真实 Validator 时需要一并接上
+- **状态**：✅ 已修复（07-03 晚间）。`workflow.py::validator_node()` 从
+  `task_decomposition.tasks[].acceptance_criteria` 拍平取出清单，传给
+  `validator_stub.py::validate(criteria=...)` 再转发给 C 的 `llm_check()`。
+  真实测试过：LLM 逐条核对代码、引用具体行号，还真的判过一条"界面美观易用"
+  没完全达标（`passed: False`），会触发重试闭环——不是摆设了
 
 ### 3. `TaskDecomposition.estimated_iterations` 生成了但从未被使用
 - **在哪**：AI 自己估计需要几轮修复
@@ -66,11 +67,9 @@ Commander 生成的任何调度信息。
   不是"简化版"，是"完全没有"
 
 ### 8. FastAPI API 层不存在
-- **在哪**：CLAUDE.md 设计了 `POST /api/tasks`、`WS /ws/tasks/{id}` 等接口，
-  是"必做"项，D 的前端预期通过这层接真实数据
-- **实际情况**：`backend/api/` 目录不存在，`run()` 只能当裸 Python 函数直接调，
-  D 现在的前端只能用 Mock 数据，没有真实接口可接
-- **状态**：未开始，是目前唯一还没人碰的"必做"项，比记忆缺失更影响能不能演示
+- **状态**：✅ 已修复（07-03）。`backend/api/`（`POST /api/submit` + `WS /ws/tasks/{id}`
+  + `GET /api/metrics/tokens`）+ `run(on_event=...)` 流式支持，D 的前端已从 Mock
+  切换为真实数据，端到端验证过多轮
 
 ### 9. Commander 曾建议前端技术栈，与 FrontendExpert 写死的 Tkinter 冲突
 - **状态**：✅ 已修复（07-03）。`commander_prompt.py` 加了规则：
@@ -85,6 +84,57 @@ Commander 生成的任何调度信息。
   系统架构.html 的 AI 模型层（同时把 Ollama-only 改成 DeepSeek 优先+Ollama兜底，
   对齐实际代码）
 
+### 12. Token 消耗全程没有真实记录
+- **在哪**：A 写了 `call_log.py` 的完整落盘机制，但 B 的三个专家 Agent 直接用
+  `ChatOpenAI.invoke()`，从没调过 `log_call()`
+- **状态**：✅ 已修复（07-03）。新增 `backend/tools/llm_logging.py::timed_invoke()`
+  包一层，三个专家节点接入；顺手发现并修了 `call_log.py::get_recent_logs()`
+  的真实 bug（对 `fetchall()` 结果又取 `.description`）。Commander 走的是
+  `ollama_client.generate()`（不是 `ChatOpenAI`），暂未接入这套记录，图表里
+  Commander 一栏目前还是空的
+
+### 13. C 的真实 Validator 接入
+- **状态**：✅ 已修复（07-03 晚间）。`pywinauto` 装了、`ruff` PATH 修了、C 的
+  `server.py` 里 emoji 打印导致 Windows GBK 控制台崩溃的问题绕过了（`PYTHONIOENCODING=utf-8`，
+  没改她代码）。C 后来自己把 `validator_stub.py` 改成"直接 Python 调用优先"，
+  不再需要单独起 HTTP 服务，验证过真实启动应用+截图+ruff 检查全部工作正常
+
+### 15. Commander 生成的验收标准可能跟专家的固定技术约束互相矛盾
+- **在哪**：接上真实验收标准核对（第2条）后，用"骰子小游戏"需求实测发现——
+  Commander 生成了"历史记录存储在内存中，重启后丢失"这条标准，但
+  `BackendExpert` 的 System Prompt 里硬性要求"数据库文件名固定为 app.db"
+  （必须 SQLite 持久化），两者互相矛盾
+- **实际情况**：这条标准物理上不可能通过，但 `should_retry` 不知道"这轮失败是因为
+  不可能达成"还是"这轮失败是因为代码写错了"，于是把 5 轮重试全部烧完
+  （`iterations: 5`），每轮都要真实调用 DeepSeek API，最后依然 `validation_passed: false`。
+  同一次测试里前端还有个键名不一致的真 bug（`db.py` 有时返回 `points` 有时 `value`，
+  和 `app.py` 读的 `point`/`points` 对不上），这个是可以被修复轮次修好的，
+  跟"内存存储"这条不可能修好的标准混在一起，进一步拖累收敛
+- **状态**：✅ 已修复（07-03）。`BACKEND_SYSTEM_PROMPT` 去掉"数据库文件名固定为 app.db"
+  的硬性要求，改成"任务要求持久化就用 sqlite3，要求内存存储就用普通变量"，
+  让 `BackendExpert` 根据任务描述自己判断，不再跟这类验收标准结构性矛盾
+
+### 17. TestExpert 真实跑过的 pytest 结果，从未被传到 C 的验证流程里
+- **状态**：✅ 已修复（07-03 深夜）。三处一起改：① `test_expert.py` 的 pytest 命令加
+  `--json-report --json-report-file=pytest_report.json`，路径存进新增的
+  `state["pytest_report_path"]`；② `validator_stub.py`/`workflow.py::validator_node`
+  转发这个路径；③ C 的 `checkers.py::pytest_check()` 从桩函数改成真的解析 JSON 报告，
+  提取失败用例的具体断言信息。真实验证过：正确读出"27个测试，23通过，4失败"，
+  还抓到一个真实 bug（自增 ID 计数器没有在测试间重置）
+
+### 16. C 读取代码做 LLM 核对时有 8000 字符截断，长文件的测试标准验证不了
+- **状态**：✅ 已修复（07-03 深夜）。C 的 `run.py::validate()` 加了可选参数
+  `code_content`，`workflow.py::validator_node` 把 `state` 里已经完整存在、
+  从没被截断过的 `backend_code`/`frontend_code`/`test_code` 拼好直接传过去，
+  不用 C 再重新读硬盘+截断。真实验证过：17102 字符完整传递，LLM 能同时看到
+  db.py 和 test_app.py 的完整内容，不再出现"文件被截断"
+
+### 14. `ollama_client.py` 文件名具有误导性
+- **在哪**：`backend/agents/commander/ollama_client.py`——早期纯 Ollama 架构的历史命名，
+  DeepSeek 迁移后内部逻辑已经是 DeepSeek 优先，但文件名没跟着改，容易让人误以为
+  还在用 Ollama（今天已经被问到一次）
+- **状态**：不修——本人评估过，改名涉及全项目 import 路径，风险大于收益，暂缓
+
 ---
 
 ## 待决策事项
@@ -94,4 +144,7 @@ Commander 生成的任何调度信息。
   还是接受现状、在文档里降低"动态编排"这个说法的承诺程度，说清楚现在是简化版
 - **Skills 层要不要真的接上**：让专家 Agent 的 System Prompt 从 SKILL.md 读取而不是硬编码，
   还是干脆承认现在不需要这层抽象，把 SKILL.md 当纯文档留着就好
-- **记忆层和 API 层谁先做**：API 层是必做项且直接影响能否演示，优先级应该更高
+- ~~记忆层和 API 层谁先做~~：API 层已完成，记忆层仍是 Week2 选做，暂不处理
+- **`estimated_iterations` 要不要接进重试上限**：现在固定 5 轮硬顶。如果要让
+  Commander 的估计值生效，得想清楚是"软目标+5轮硬顶不变"还是真的动态改上限——
+  后者有被 AI 估计值带偏、失去安全网意义的风险，偏向前者但还没定

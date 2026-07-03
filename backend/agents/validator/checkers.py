@@ -148,17 +148,63 @@ def ruff_check(app_path: str) -> Tuple[bool, List[str], List[FailedTest]]:
 # ===== ③ pytest 检查（桩） =====
 
 def pytest_check(app_path: str, pytest_result_path: str = None) -> Tuple[bool, List[str], List[FailedTest]]:
-    """读取 TestExpert 已跑完的 pytest 结果（桩函数）
+    """读取 TestExpert 已跑完的 pytest 结果
 
-    MVP 阶段: B 还没产出，返回跳过。
-    后续接入: 读取 pytest_result_path（json 格式），解析 failed 用例。
+    有 pytest_result_path（B 的 TestExpert 用 `pytest --json-report` 生成）
+    就读取真实结果；没有就跳过（保持向后兼容，独立自测/B 未接入时不受影响）。
 
     参数:
         app_path: 应用路径
         pytest_result_path: pytest --json-report 输出路径（B 提供）
     """
-    logs = ["[pytest] ⏭️ 桩函数：TestExpert 未接入，跳过（返回通过）"]
-    return True, logs, []
+    logs: List[str] = []
+    failed: List[FailedTest] = []
+
+    if not pytest_result_path:
+        logs.append("[pytest] ⏭️ 未提供 pytest_result_path，跳过（返回通过）")
+        return True, logs, failed
+
+    report_path = Path(pytest_result_path)
+    if not report_path.exists():
+        logs.append(f"[pytest] ⚠️ 报告文件不存在: {pytest_result_path}，跳过（返回通过）")
+        return True, logs, failed
+
+    try:
+        data = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logs.append(f"[pytest] ⚠️ 报告解析失败: {type(e).__name__}: {str(e)[:150]}，跳过（返回通过）")
+        return True, logs, failed
+
+    summary = data.get("summary", {})
+    total = summary.get("total", 0)
+    passed_count = summary.get("passed", 0)
+    failed_count = summary.get("failed", 0)
+    error_count = summary.get("error", 0)
+
+    logs.append(
+        f"[pytest] 读取真实测试结果: {total} 个测试，"
+        f"{passed_count} 通过，{failed_count} 失败，{error_count} 错误"
+    )
+
+    for test in data.get("tests", []):
+        if test.get("outcome") in ("failed", "error"):
+            nodeid = test.get("nodeid", "unknown")
+            longrepr = ""
+            for phase in ("call", "setup", "teardown"):
+                phase_data = test.get(phase) or {}
+                if phase_data.get("longrepr"):
+                    longrepr = str(phase_data["longrepr"])
+                    break
+            logs.append(f"[pytest] ❌ {nodeid}: {longrepr[:150]}")
+            failed.append(FailedTest(name=nodeid, reason=longrepr[:300] or "测试失败", severity="error"))
+
+    ok = failed_count == 0 and error_count == 0
+    if ok:
+        logs.append(f"[pytest] ✅ 全部通过（{passed_count}/{total}）")
+    else:
+        logs.append(f"[pytest] ❌ {failed_count + error_count} 个测试未通过")
+
+    return ok, logs, failed
 
 
 # ===== ④ LLM 验收标准核对 =====

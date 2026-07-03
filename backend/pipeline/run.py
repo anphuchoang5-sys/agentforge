@@ -82,6 +82,7 @@ def run(
         "test_path": None,                  # 测试文件存到硬盘的路径
         "test_results": None,               # pytest 真实运行的输出，如 "3 passed, 0 failed"
         "test_passed": None,                # 测试是否全部通过，True 或 False
+        "pytest_report_path": None,         # pytest --json-report 生成的 JSON 报告路径
 
         # ── Validator（C）填────────────────────────────────────
         "validation_passed": None,          # C 验证是否通过，True 或 False

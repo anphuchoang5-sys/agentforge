@@ -16,11 +16,12 @@ from backend.agents.experts.output_naming import resolve_output_dir
 load_dotenv()
 
 BACKEND_SYSTEM_PROMPT = """你是一位专业的 Python 后端工程师。
-你的任务是根据接口规范，用 Python + SQLite 实现后端数据层代码。
+你的任务是根据接口规范和任务描述，用 Python 实现后端数据层代码。
 
 要求：
-- 使用标准库 sqlite3，不引入额外依赖
-- 数据库文件名固定为 app.db
+- 只用标准库，不引入额外依赖
+- 数据存储方式根据任务描述判断：要求持久化保存就用 sqlite3（数据库文件名固定为 app.db）；
+  要求内存存储/重启后丢失就不要用数据库，用模块级变量（list/dict）保存
 - 严格按照给定的函数名和参数实现，不要改名
 - 只输出 Python 代码，用 ```python ... ``` 包裹
 - 代码要能直接运行，不留 TODO

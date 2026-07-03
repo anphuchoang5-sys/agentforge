@@ -31,15 +31,35 @@ def validator_node(state: ProjectState) -> dict:
 
     validate() 是同学 C 真正要实现的函数（对应最终分工表接口③：
     app_path → {passed, logs, screenshot, failed_tests}），现在
-    backend/agents/validator_stub.py 里放的是占位 Mock 实现。
-    这里只负责调用 + 把返回结果的字段映射进 ProjectState 白板，
-    C 上线后只需在 validator_stub.py 内部切换成真实调用（见其文件内注释），
-    本函数和整张图都不用改。
+    backend/agents/validator_stub.py 里已经接了 C 的真实实现。
+    这里负责调用 + 把返回结果的字段映射进 ProjectState 白板，还负责两件事：
+
+    1. 把 Commander 拆解出的验收标准（acceptance_criteria）从 task_decomposition
+       里拍平取出来传给 validate()——C 的 checkers.py::llm_check() 需要这份清单
+       才能逐条核对，不传就等于白建了这个功能（见 problem.md 第2条）。
+    2. 把 backend_code/frontend_code/test_code 这三份内存里完整、没截断过的代码
+       拼好传给 validate()，C 就不用再去硬盘上重新读一遍、被她的 8000 字符上限
+       截断（见 problem.md 第16条）；同时把 TestExpert 生成的 pytest JSON 报告
+       路径传过去，C 的 pytest_check 才能读到真实测试结果而不是永远跳过
+       （见 problem.md 第17条）。
     """
     from backend.agents.validator_stub import validate
+
+    decomp = state.get("task_decomposition")
+    criteria = [c for t in (decomp.tasks if decomp else []) for c in t.acceptance_criteria]
+
+    code_content = (
+        f"# ===== db.py =====\n{state.get('backend_code') or ''}\n\n"
+        f"# ===== app.py =====\n{state.get('frontend_code') or ''}\n\n"
+        f"# ===== test_app.py =====\n{state.get('test_code') or ''}"
+    )
+
     report = validate(
         app_path=state.get("frontend_path", ""),
         test_results=state.get("test_results", ""),
+        criteria=criteria,
+        code_content=code_content,
+        pytest_result_path=state.get("pytest_report_path"),
     )
     return {
         "validation_passed": report["passed"],

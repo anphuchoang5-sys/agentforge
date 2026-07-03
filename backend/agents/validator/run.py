@@ -155,6 +155,8 @@ def validate(
     app_path: str,
     criteria: Optional[List[str]] = None,
     iteration: int = 0,
+    code_content: Optional[str] = None,
+    pytest_result_path: Optional[str] = None,
 ) -> TestReport:
     """验证者主入口：对外接口实现
 
@@ -162,6 +164,13 @@ def validate(
         app_path: 应用入口文件路径，如 "./output/todo_app/main.py"
         criteria: 验收标准列表（来自 Commander，可选；MVP 阶段第④项为桩）
         iteration: 修复轮次（由 B 传入，记录在报告里供 D 展示）
+        code_content: 可选，调用方直接提供的代码内容（如 B 的 ProjectState 里
+            backend_code/frontend_code/test_code 拼接后的完整未截断字符串）。
+            传了就直接用，不用再从硬盘读取+截断，避免 read_app_code() 的
+            8000 字符上限把长文件（尤其 test_app.py）切掉
+        pytest_result_path: 可选，B 的 TestExpert 用 `pytest --json-report`
+            生成的 JSON 报告文件路径。传了就读取真实测试结果，不传则
+            pytest_check 保持跳过（向后兼容，不影响独立自测）
 
     返回:
         TestReport — Pydantic 对象，.model_dump() 即接口 JSON
@@ -191,16 +200,17 @@ def validate(
     all_logs.extend(logs)
     all_failed.extend(failed)
 
-    # 3. pytest 检查（桩）
-    passed, logs, failed = checkers.pytest_check(app_path)
+    # 3. pytest 检查（有 pytest_result_path 就读真实结果，没有就跳过）
+    passed, logs, failed = checkers.pytest_check(app_path, pytest_result_path)
     all_logs.extend(logs)
     all_failed.extend(failed)
 
     # 4. LLM 验收标准核对
-    # 读取整个项目目录的代码（不只是 app.py，还包含 db.py 等），
-    # 这样 LLM 能看到后端函数实现，判断验收标准是否满足
-    app_dir = str(Path(app_path).parent) if Path(app_path).is_file() else app_path
-    code_content = checkers.read_app_code(app_dir) if criteria else None
+    # 优先用调用方直接提供的 code_content（完整未截断）；
+    # 没提供才退回读取整个项目目录（db.py/app.py/test_app.py 拼一起，会截断）
+    if code_content is None and criteria:
+        app_dir = str(Path(app_path).parent) if Path(app_path).is_file() else app_path
+        code_content = checkers.read_app_code(app_dir)
     passed, logs, failed = checkers.llm_check(app_path, criteria, code_content)
     all_logs.extend(logs)
     all_failed.extend(failed)
