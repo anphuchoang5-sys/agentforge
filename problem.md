@@ -148,3 +148,11 @@ Commander 生成的任何调度信息。
 - **`estimated_iterations` 要不要接进重试上限**：现在固定 5 轮硬顶。如果要让
   Commander 的估计值生效，得想清楚是"软目标+5轮硬顶不变"还是真的动态改上限——
   后者有被 AI 估计值带偏、失去安全网意义的风险，偏向前者但还没定
+
+
+  ### 18. 前端仍在使用 Mock 数据，未接入真实 WebSocket
+- **状态**：🔄 等待 B 同学提供 WebSocket 地址和推送格式
+- **说明**：前端已完成所有 UI 展示逻辑（日志/截图/迭代轮次/failed_tests），
+  但目前仍运行在 Mock 模式。B 同学需提供真实 WebSocket 接口地址，
+  前端将 `startMockSimulation()` 替换为 `connectRealWebSocket(taskId)` 即可完成对接
+- **预计解决时间**：B 同学接口提供后 10 分钟
