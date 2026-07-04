@@ -83,7 +83,7 @@ def ruff_check(app_path: str) -> Tuple[bool, List[str], List[FailedTest]]:
     target = Path(app_path)
     ruff_target = str(target.parent) if target.is_file() else str(target)
 
-    cmd = [r"C:\Users\H1882\AppData\Local\Python\pythoncore-3.14-64\Scripts\ruff.exe", "check", "--config", _RUFF_CONFIG, "--output-format=json", ruff_target]
+    cmd = ["ruff", "check", "--config", _RUFF_CONFIG, "--output-format=json", ruff_target]
     logs.append(f"[ruff] 执行: {' '.join(cmd)}")
 
     try:
@@ -217,7 +217,7 @@ def llm_check(
 ) -> Tuple[bool, List[str], List[FailedTest]]:
     """LLM 逐条核对验收标准
 
-    调用 A 的 ollama_client.generate()，用 validator_prompt.py 的提示词，
+    调用 A 的 ollama_client.generate_with_metrics()，用 validator_prompt.py 的提示词，
     让 LLM 逐条判断每条验收标准是否在代码中实现。
 
     降级策略:

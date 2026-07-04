@@ -18,6 +18,9 @@ Agent 调用方式（langchain-mcp-adapters）：
 from mcp.server.fastmcp import FastMCP
 from backend.tools.file_tools import write_file, read_file
 from backend.tools.command_tools import run_command as _run_command
+from backend.tools.console_encoding import ensure_utf8_console
+
+ensure_utf8_console()
 
 mcp = FastMCP("agentforge-tools")
 

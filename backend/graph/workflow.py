@@ -65,6 +65,7 @@ def validator_node(state: ProjectState) -> dict:
         "validation_passed": report["passed"],
         "validation_logs": report["logs"],
         "screenshot_path": report.get("screenshot"),
+        "failed_tests": report.get("failed_tests", []),
     }
 
 

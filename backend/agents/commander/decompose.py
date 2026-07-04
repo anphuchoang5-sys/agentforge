@@ -22,6 +22,15 @@ try:
 except ImportError:
     pass
 
+try:
+    # 独立运行（python decompose.py，项目根不在 sys.path 上）时这个绝对
+    # 导入会失败，直接跳过——本文件目前没有 emoji 打印，跳过不影响功能，
+    # 只是为将来万一加了 emoji 打印预先接好口子（problem.md 第31条）。
+    from backend.tools.console_encoding import ensure_utf8_console
+    ensure_utf8_console()
+except ImportError:
+    pass
+
 # 同时支持两种导入方式：
 #   - 作为模块被 B 导入: from backend.agents.commander.decompose import decompose
 #   - 直接运行: python decompose.py
@@ -191,41 +200,6 @@ def decompose(user_input: str, model: str = None) -> TaskDecomposition:
                 )
 
         print(f"[WARN] {current_model} 3次均失败，尝试下一个模型")
-
-    raise RuntimeError(
-        "需求拆解失败：所有模型均无响应。\n"
-        "请确认 DEEPSEEK_API_KEY 已配置，或启动 ollama serve。"
-    )
-
-
-def decompose_with_metrics(user_input: str, model: str = None) -> dict:
-    """带耗时和Token统计的版本（供D展示）"""
-    if model is None:
-        model = os.getenv("COMMANDER_MODEL", "deepseek-v4-pro" if os.getenv("DEEPSEEK_API_KEY") else "Qwen2.5-Coder:7B")
-
-    full_prompt = f"{COMMANDER_SYSTEM_PROMPT}\n\n用户需求：{user_input}"
-
-    for current_model in _get_models_to_try(model):
-        try:
-            metrics = _gem(full_prompt, current_model)
-            raw = metrics["response"]
-
-            parsed = _parse_json_fallback(raw)
-            if not parsed:
-                raise RuntimeError(f"模型返回内容无法解析为 JSON，模型={current_model}")
-
-            result = TaskDecomposition.model_validate(parsed)
-            return {
-                "result": result.model_dump(),
-                "metrics": {
-                    "duration_ms": metrics["duration_ms"],
-                    "tokens": metrics["tokens"],
-                    "model": metrics["model"],
-                },
-            }
-        except Exception as e:
-            print(f"[WARN] {current_model} 调用失败: {e}")
-            continue
 
     raise RuntimeError(
         "需求拆解失败：所有模型均无响应。\n"

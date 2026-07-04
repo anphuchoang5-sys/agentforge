@@ -32,6 +32,7 @@ try:
         app_launch, app_close, ui_click, ui_input, ui_get_text, screenshot,
         launch_and_get_window,
     )
+    from backend.tools.console_encoding import ensure_utf8_console
 except ImportError:
     # 直接运行时回退：把项目根加入 sys.path，让 backend namespace package 可导入
     import sys as _sys
@@ -40,6 +41,12 @@ except ImportError:
         app_launch, app_close, ui_click, ui_input, ui_get_text, screenshot,
         launch_and_get_window,
     )
+    from backend.tools.console_encoding import ensure_utf8_console
+
+# 自测块（__main__）里会 print(report.logs)，里面全是 ✅❌⚠️⏭️ 前缀，
+# Windows 默认 GBK 控制台直接打印会崩溃（problem.md 第31条同一类问题，
+# 这里补上；被 B 的 run.py import 时也会调，重复调用无副作用）。
+ensure_utf8_console()
 
 
 # ===== 应用类型探测 =====

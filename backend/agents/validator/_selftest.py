@@ -21,22 +21,21 @@ import sys
 import time
 from pathlib import Path
 
-# Windows 默认控制台编码是 GBK，本文件里贯穿全文的 ✅❌⚠️🎉 打印在这种编码下
-# 会直接 UnicodeEncodeError 崩溃。之前靠运行时手动设置 PYTHONIOENCODING=utf-8
-# 环境变量绕过，忘记设就会复现崩溃（problem.md 第31条）。这里直接在代码里
-# 改流编码，不依赖任何人记得设环境变量。
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
-except (AttributeError, ValueError):
-    pass
+# 直接运行此脚本（非 -m 模块方式）时 backend 包可能还不在 sys.path 上，
+# 必须先补路径，才能 import 下面任何 backend.* 模块（含 console_encoding）。
+sys.path.insert(0, str(Path(__file__).parents[3]))
+
+from backend.tools.console_encoding import ensure_utf8_console
+
+# 本文件里贯穿全文的 ✅❌⚠️🎉 打印在 Windows 默认 GBK 控制台下会直接
+# UnicodeEncodeError 崩溃（problem.md 第31条）。
+ensure_utf8_console()
 
 try:
     from pywinauto import Application
 except ImportError:
     sys.exit("pywinauto 未安装: pip install pywinauto Pillow")
 
-sys.path.insert(0, str(Path(__file__).parents[3]))
 from backend.mcp_tools.desktop_control import (
     ui_click, ui_input, ui_get_text, screenshot,
 )

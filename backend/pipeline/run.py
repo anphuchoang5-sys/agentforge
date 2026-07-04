@@ -4,7 +4,9 @@ B 核心产出物
 
 run(user_input) 是 B 对外暴露的唯一接口：
   输入：用户一句话需求
-  输出：{"deliverable": "zip路径", "test_report": {...}, "app_path": "主文件路径"}
+  输出：{"deliverable": "zip路径", "test_report": {...}, "app_path": "主文件路径",
+        "passed": ..., "logs": [...], "screenshot": "...", "failed_tests": [...], "iteration": ...}
+        （后四项 + passed/iteration 是 C 的 Validator 原始报告字段，供前端直接读取）
 """
 
 import os
@@ -13,6 +15,13 @@ from typing import Callable, Optional
 from backend.graph.project_state import ProjectState
 from backend.graph.workflow import build_graph
 from backend.api.observability import get_tracer, node_span
+from backend.tools.console_encoding import ensure_utf8_console
+
+# run.py 是整条流水线唯一入口，这里统一确保 UTF-8 控制台一次，覆盖后面
+# 所有节点（Commander/三专家/Validator）的 print()——不用每冒出一个新的
+# emoji print 就在那个文件里单独补一次（problem.md 第31条同一类问题，
+# 这次冒烟测试在 test_expert.py 新加的 collect-only 失败分支里真实复现过）。
+ensure_utf8_console()
 
 
 def _zip_output(output_dir: str) -> str:
@@ -52,9 +61,17 @@ def run(
             "test_report": {
                 "backend_generated": True,
                 "frontend_generated": True,
-                "iterations": 1,
-                "validation_passed": True,
-            }
+            },
+            # 下面这几项是 C 的 Validator 原始报告（TestReport）字段，供前端
+            # done 事件里的截图/失败用例/通过角标直接读取（对齐 CLAUDE.md 里
+            # C 的对外接口）。是否验证通过/第几轮只在这里存一份——之前
+            # test_report 里也重复放过 validation_passed/iterations，
+            # 全仓库没人读，属于纯冗余，已经收掉。
+            "passed": True,
+            "logs": ["[compile] ok", "[ruff] no issues", "..."],
+            "screenshot": "base64 PNG 或空串",
+            "failed_tests": [{"name": "...", "reason": "...", "severity": "error"}],
+            "iteration": 1,
         }
     """
     print(f"\n{'='*50}")
@@ -88,6 +105,7 @@ def run(
         "validation_passed": None,          # C 验证是否通过，True 或 False
         "validation_logs": None,            # C 验证的详细日志列表
         "screenshot_path": None,            # C 截图存的路径（C 上线后才有值）
+        "failed_tests": None,               # C 的 TestReport.failed_tests，逐条失败项
 
         # ── 流程控制（B 维护）──────────────────────────────────
         "iteration_count": 0,               # 当前重试轮数，超过 5 次强制终止
@@ -143,12 +161,25 @@ def run(
         result = {
             "deliverable": deliverable,
             "app_path": final_state.get("frontend_path"),
+            # test_report 只保留没有别处能拿到的信息（是否生成出代码）；
+            # 验证是否通过/第几轮，全仓库 grep 确认没有任何后端或前端代码
+            # 读取过 test_report.validation_passed/test_report.iterations，
+            # 一直是写了没人读的重复字段——单一数据源统一放到下面的
+            # passed/iteration（跟 C 的 Validator 原始报告字段放在一起）。
             "test_report": {
                 "backend_generated": bool(final_state.get("backend_code")),
                 "frontend_generated": bool(final_state.get("frontend_code")),
-                "iterations": final_state.get("iteration_count", 0),
-                "validation_passed": final_state.get("validation_passed", False),
             },
+            # C 的 Validator 原始报告字段（对齐 CLAUDE.md 里 C 的对外接口
+            # {"passed","logs","screenshot","failed_tests"}）——之前这里只有
+            # 上面的 test_report 摘要，前端 agentClient.ts 的 isValidatorPayload/
+            # applyValidatorResult 一直在等的是这几个顶层字段，done 事件里根本
+            # 没传过，导致截图/失败用例/通过角标接真实后端时永远不会被填充。
+            "passed": final_state.get("validation_passed", False),
+            "logs": final_state.get("validation_logs") or [],
+            "screenshot": final_state.get("screenshot_path") or "",
+            "failed_tests": final_state.get("failed_tests") or [],
+            "iteration": final_state.get("iteration_count", 0),
         }
 
     print(f"\n[run] 完成！交付物: {deliverable}")

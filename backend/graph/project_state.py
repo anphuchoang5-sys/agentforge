@@ -34,6 +34,7 @@ class ProjectState(TypedDict):
     validation_passed: Optional[bool]
     validation_logs: Optional[List[str]]
     screenshot_path: Optional[str]
+    failed_tests: Optional[List[dict]]      # C 的 TestReport.failed_tests（[{name,reason,severity}]），供前端失败用例面板展示
 
     # ── 流程控制（B 维护）──────────────────────
     iteration_count: int                    # 当前重试轮数，超 5 次强制终止

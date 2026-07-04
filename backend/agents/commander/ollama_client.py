@@ -30,16 +30,6 @@ def _default_model() -> str:
     return os.getenv("COMMANDER_MODEL", "deepseek-v4-pro" if DEEPSEEK_API_KEY else "Qwen2.5-Coder:7B")
 
 
-def generate(prompt: str, model: str = None) -> str:
-    """调用 LLM，返回生成文本。DeepSeek 优先，Ollama 备用。"""
-    if model is None:
-        model = _default_model()
-
-    if DEEPSEEK_API_KEY and _is_deepseek(model):
-        return _generate_deepseek(prompt, model)
-    return _generate_ollama(prompt, model)
-
-
 def generate_with_metrics(prompt: str, model: str = None) -> dict:
     """带耗时和 Token 统计的调用（供 D 展示用）
 
@@ -106,32 +96,3 @@ def health_check() -> bool:
         return r.status_code == 200
     except requests.RequestException:
         return False
-
-
-def _generate_deepseek(prompt: str, model: str) -> str:
-    resp = requests.post(
-        f"{DEEPSEEK_BASE_URL}/chat/completions",
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3,
-            "max_tokens": 4096,
-        },
-        headers={
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
-
-
-def _generate_ollama(prompt: str, model: str) -> str:
-    resp = requests.post(
-        OLLAMA_GENERATE,
-        json={"model": model, "prompt": prompt, "stream": False, "temperature": 0.3},
-        timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()["response"]
