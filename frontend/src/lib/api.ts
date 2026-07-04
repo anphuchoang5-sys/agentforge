@@ -1,8 +1,8 @@
 // api.ts — 后端 REST/WebSocket 客户端
 // 对应 backend/api/main.py（POST /api/submit + WS /ws/tasks/{task_id}）
 
-const API_BASE = 'http://localhost:8000'
-const WS_BASE = 'ws://localhost:8000'
+const API_BASE = 'http://127.0.0.1:8000'
+const WS_BASE = 'ws://127.0.0.1:8000'
 
 // ============ 类型 ============
 

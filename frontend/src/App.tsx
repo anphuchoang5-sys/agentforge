@@ -1,6 +1,13 @@
 import { useCallback } from 'react'
 import { useAppStore, type AgentStatus } from '@/store/appStore'
-import { startAgentWorkflow } from '@/mocks/mockWebSocket'
+import { startAgentWorkflow as realStartAgentWorkflow } from '@/lib/agentClient'
+import { startAgentWorkflow as mockStartAgentWorkflow } from '@/mocks/mockWebSocket'
+
+// 通过环境变量 VITE_USE_MOCK 控制模式：
+//   VITE_USE_MOCK=true  → 使用 Mock 模拟数据（前端独立开发/演示）
+//   不设置或设为 false  → 连接真实后端 127.0.0.1:8000
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
+const startAgentWorkflow = USE_MOCK ? mockStartAgentWorkflow : realStartAgentWorkflow
 import {
   BarChart,
   Bar,

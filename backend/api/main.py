@@ -6,6 +6,9 @@ B 核心产出物 · 对齐系统架构.html「② API 层」
     uvicorn backend.api.main:app --reload --port 8000
 """
 
+from dotenv import load_dotenv
+load_dotenv()  # 必须在所有其他 import 之前，确保 .env 中的环境变量已加载
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

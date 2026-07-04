@@ -56,6 +56,7 @@
 | D-前端 | 前端代码已推送至 Gitee | D | 07-03 |
 | D-前端 | 适配 Validator 接口格式（截图/日志颜色/迭代轮次/failed_tests） | D | 07-04 |
 | D-前端 | 前端界面已就绪，等待后端 WebSocket 真实对接 | D | 07-04 |
+| D-前端 | 前端对接真实后端 WebSocket，联调通过（Commander → Backend → Frontend → Test → Validator 全流程） | D | 07-04 |
 
 ### 🔄 进行中
 
@@ -69,7 +70,7 @@
 |------|------|--------|
 | C-验证测试 | 验证者 Agent Prompt + ruff 检查 + pywinauto 桌面控制 | C |
 
-| D-前端 | 对接真实 WebSocket（等待 B 提供接口地址） | D |
+
 | 联调 | A→B→C 全链路端到端测试（接入 C 的真实验证服务） | 全员 |
 | 部署 | Docker Compose 一键启动 | 全员 |
 | 演示 | 演示场景调试 + 录制 | 全员 |

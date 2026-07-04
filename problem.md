@@ -150,9 +150,10 @@ Commander 生成的任何调度信息。
   后者有被 AI 估计值带偏、失去安全网意义的风险，偏向前者但还没定
 
 
-  ### 18. 前端仍在使用 Mock 数据，未接入真实 WebSocket
-- **状态**：🔄 等待 B 同学提供 WebSocket 地址和推送格式
-- **说明**：前端已完成所有 UI 展示逻辑（日志/截图/迭代轮次/failed_tests），
-  但目前仍运行在 Mock 模式。B 同学需提供真实 WebSocket 接口地址，
-  前端将 `startMockSimulation()` 替换为 `connectRealWebSocket(taskId)` 即可完成对接
-- **预计解决时间**：B 同学接口提供后 10 分钟
+ ### 18. 前端已对接真实 WebSocket，Mock 模式已切换为真实后端
+- **状态**：已修复（07-04）
+- **说明**：前端已从 Mock 模式切换到真实后端 WebSocket 连接，
+  `POST /api/submit` 创建任务，`WS /ws/tasks/{task_id}` 接收实时推送，
+  全流程（Commander → Backend → Frontend → Test → Validator）完整跑通。
+  验证通过后自动截图，17 条验收标准全部通过。
+- **联调结果**：验证通过（1 个 warning，无 error），测试 22/22 通过
