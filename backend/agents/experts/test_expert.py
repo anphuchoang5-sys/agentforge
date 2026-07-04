@@ -75,7 +75,7 @@ def test_expert_node(state: ProjectState) -> dict:
 注意：测试文件会和 db.py 放在同一个目录下运行。"""
 
     llm = ChatOpenAI(
-        model=os.getenv("EXPERT_MODEL", "deepseek-coder"),
+        model=os.getenv("EXPERT_MODEL", "deepseek-v4-pro"),
         api_key=os.getenv("DEEPSEEK_API_KEY"),
         base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
         temperature=0.1,

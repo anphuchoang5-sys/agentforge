@@ -14,11 +14,25 @@ B 接入方式（在 .env 加一行）:
     VALIDATOR_URL=http://localhost:8901
 """
 
+import sys
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
 from .run import validate as _validate, health_check as _health_check
+
+# Windows 默认控制台编码是 GBK，本文件和 _selftest.py 里的 print 用了 emoji
+# （🚀✅❌等），GBK 编码不了会直接 UnicodeEncodeError 崩溃。之前是靠运行时
+# 手动设置 PYTHONIOENCODING=utf-8 环境变量绕过的，忘记设就会复现崩溃
+# （problem.md 第31条）。这里直接在代码里改流编码，不依赖任何人记得设环境变量。
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    # stdout/stderr 被重定向成不支持 reconfigure 的流时（比如某些测试捕获场景），
+    # 直接跳过——不影响功能，只是那种场景下本来就不会在真实控制台崩溃
+    pass
 
 app = FastAPI(
     title="AgentForge Validator",

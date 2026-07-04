@@ -4,8 +4,15 @@ B 核心产出物
 
 run() 是同步阻塞函数（真实调 LLM，耗时数十秒到几分钟），FastAPI 的
 event loop 不能被它卡住，所以丢进线程池跑（asyncio.to_thread）；
-执行过程中通过 on_event 回调把事件塞进 asyncio.Queue，
-routes/websocket.py 再从 Queue 里读出来实时推给前端。
+执行过程中通过 on_event 回调把事件同时记进 task.history（完整事件历史）
+和广播给所有当前连接的 WebSocket 订阅者，routes/websocket.py 再实时推给前端。
+
+之前是"一个任务配一个共享 Queue"，取过的事件就没了：任务跑完之后才连上的
+客户端会在空 Queue 上永远卡住（problem.md 第28条），也没法让两个同时连接
+的客户端各自看到完整日志流。现在改成"事件历史 + 每个连接各自的订阅 Queue"：
+新连接先重放 history 补齐错过的部分，再实时接收后续事件；判断"任务是否已经
+结束"不再依赖一个写了没人读的 done 字段，而是直接看 history 里有没有出现
+过 END_SENTINEL，天然跟事件流保持一致。
 
 进程内存存储，重启即丢——两周演示项目不需要 Redis/数据库级任务队列。
 """
@@ -26,8 +33,8 @@ END_SENTINEL = {"type": "__end__"}
 class Task:
     task_id: str
     user_input: str
-    queue: "asyncio.Queue" = field(default_factory=asyncio.Queue)
-    done: bool = False
+    history: list = field(default_factory=list)          # 完整事件历史，供新连接重放
+    subscribers: list = field(default_factory=list)       # 当前活跃 WebSocket 连接各自的 Queue
 
 
 _tasks: dict[str, Task] = {}
@@ -53,13 +60,34 @@ def get_task(task_id: str) -> Optional[Task]:
     return _tasks.get(task_id)
 
 
+def subscribe(task: Task) -> "asyncio.Queue":
+    """WebSocket 连接建立时调用：注册一个只属于这条连接的 Queue，
+    之后每个新事件都会广播进所有当前订阅者的 Queue（而不是被某一个连接独占取走）"""
+    q: "asyncio.Queue" = asyncio.Queue()
+    task.subscribers.append(q)
+    return q
+
+
+def unsubscribe(task: Task, q: "asyncio.Queue") -> None:
+    """WebSocket 连接断开时调用：从订阅列表里摘掉，避免持续给已断开的连接推事件"""
+    if q in task.subscribers:
+        task.subscribers.remove(q)
+
+
 async def run_pipeline_in_background(task: Task) -> None:
-    """调度到线程池跑 run()，实时把翻译后的 UI 事件推进 task.queue"""
+    """调度到线程池跑 run()，实时把翻译后的 UI 事件记进历史 + 广播给所有订阅者"""
     loop = asyncio.get_running_loop()
     translator = EventTranslator()
 
     def push(event: dict) -> None:
-        loop.call_soon_threadsafe(task.queue.put_nowait, event)
+        def _record_and_broadcast() -> None:
+            task.history.append(event)
+            for q in list(task.subscribers):
+                q.put_nowait(event)
+        # 这个回调本身从工作线程（asyncio.to_thread 里跑 run_sync）触发，
+        # 用 call_soon_threadsafe 把"记历史 + 广播"整体丢回事件循环线程一次性做完，
+        # 避免历史记录和某个订阅者的 Queue 之间出现不一致的中间状态
+        loop.call_soon_threadsafe(_record_and_broadcast)
 
     for event in translator.start():
         push(event)
@@ -77,5 +105,4 @@ async def run_pipeline_in_background(task: Task) -> None:
     except Exception as e:
         push({"type": "error", "message": str(e), "detail": traceback.format_exc()})
     finally:
-        task.done = True
         push(END_SENTINEL)

@@ -21,6 +21,16 @@ import sys
 import time
 from pathlib import Path
 
+# Windows 默认控制台编码是 GBK，本文件里贯穿全文的 ✅❌⚠️🎉 打印在这种编码下
+# 会直接 UnicodeEncodeError 崩溃。之前靠运行时手动设置 PYTHONIOENCODING=utf-8
+# 环境变量绕过，忘记设就会复现崩溃（problem.md 第31条）。这里直接在代码里
+# 改流编码，不依赖任何人记得设环境变量。
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
+
 try:
     from pywinauto import Application
 except ImportError:

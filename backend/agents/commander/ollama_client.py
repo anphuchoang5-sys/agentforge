@@ -27,7 +27,7 @@ def _is_deepseek(model: str) -> bool:
 
 
 def _default_model() -> str:
-    return os.getenv("COMMANDER_MODEL", "deepseek-chat" if DEEPSEEK_API_KEY else "Qwen2.5-Coder:7B")
+    return os.getenv("COMMANDER_MODEL", "deepseek-v4-pro" if DEEPSEEK_API_KEY else "Qwen2.5-Coder:7B")
 
 
 def generate(prompt: str, model: str = None) -> str:
@@ -48,7 +48,7 @@ def generate_with_metrics(prompt: str, model: str = None) -> dict:
             "response": "模型生成的文本",
             "duration_ms": 1234,
             "tokens": 256,
-            "model": "deepseek-chat"
+            "model": "deepseek-v4-pro"
         }
     """
     if model is None:

@@ -27,6 +27,31 @@
 
 ---
 
+## 现状速览（诚实记账，详见 problem.md）
+
+本文档下面的架构描述是**设计目标**，不代表全部已实现。完整的、持续更新的"实现 vs 承诺"落差记录在
+[problem.md](problem.md)，本节只提炼当前最重要的几条，避免文档看起来比实际做到的更完美：
+
+- **动态编排目前是假的**：Commander 生成的 `dependencies`/`estimated_iterations` 字段完整且格式正确，
+  但 `workflow.py` 的执行图是写死的固定流水线（`decompose → backend/frontend → test → validator → 重试`），
+  不读取也不响应这些字段。"AI 自主编排任务"目前更准确的说法是"AI 填一份好看的说明书，写死的剧本照演"（problem.md #1/#3）
+- **Skills 层（`skills/*/SKILL.md`）目前只是静态文档**：三个专家 Agent 的 System Prompt 都硬编码在
+  `.py` 文件里，运行时不加载、不解析任何 SKILL.md（problem.md #6）
+- **记忆层（mem0 / ChromaDB / LangGraph MemorySaver）完全未实现**，不是"简化版"，是零。`graph.compile()`
+  没传 `checkpointer`，`run()` 每次调用完全无状态，同一需求跑两次互不参考（problem.md #7/#18）。CLAUDE.md
+  已把这层标为 Week2 选做，不算失职，但演示/汇报时应说清楚这一点
+- **重试闭环只会回头改 BackendExpert**：失败后的条件边只指向 `"backend_expert"`，`FrontendExpert` 只在
+  第一轮跑一次；如果 Validator 判定失败的原因出在前端，剩余重试轮次全部在修一个跟问题无关的地方
+  （problem.md #21）
+- **已识别但未加固的安全面**：MCP 暴露的 `run_command`（`shell=True`，无白名单）和 `read_file`/`write_file`
+  （无目录穿越防护）——当前唯一真实调用方传的都是写死的路径/命令，主链路本身安全，但作为通用 MCP 能力
+  设计上没有防护，扩大暴露范围前需要补（problem.md #24/#25）
+- **✅ 已完成且比早期设计更扎实的部分**：FastAPI API 层（`POST /api/submit` + WebSocket 多订阅者广播）、
+  C 的真实 Validator 接入（pywinauto + ruff + pytest JSON 报告解析）、验收标准逐条 LLM 核对、
+  Commander/Validator/三专家 Token 记账全部接入真实数据、`validator_stub.py` 不再静默吞异常伪造"通过"
+
+---
+
 ## 团队分工
 
 > 接口格式定死，联调前所有人确认，确认后任何人不得擅自修改。
@@ -46,13 +71,13 @@
 | 工作项 | 具体内容 |
 |-------|---------|
 | 专家 Agent | 编写前端/后端专家 Agent 的 System Prompt（代码生成模板） |
-| Skills 集成 | 集成 google-gemini/agent-skills，调用对应 Skill 保证代码质量 |
-| MCP Server | 搭建 MCP Server，暴露文件读写/命令执行工具 |
+| Skills 集成 | 集成 google-gemini/agent-skills，调用对应 Skill 保证代码质量 —— **未做**，SKILL.md 目前是静态文档，未被运行时加载（problem.md #6） |
+| MCP Server | 搭建 MCP Server，暴露文件读写/命令执行工具 —— 已完成，但 `run_command`/`read_file`/`write_file` 尚无沙箱/目录穿越防护（problem.md #24/#25） |
 | 文件工具 | `write_file`、`read_file`（代码落盘、读取已有代码） |
 | 命令工具 | `run_command`（执行 pip install、python main.py 等） |
 | 状态机 | LangGraph StateGraph：待执行 → 执行中 → 成功/失败 |
-| 全流程入口 | `run(user_input)` 协调 A 和 C 的调用，返回交付物 |
-| 循环控制 | 验证失败后最多重试 5 次，超时转人工 |
+| 全流程入口 | `run(user_input)` 协调 A 和 C 的调用，返回交付物 —— 已完成，含异常包装，不再裸抛/静默产出空 zip（problem.md #29） |
+| 循环控制 | 验证失败后最多重试 5 次，超时转人工 —— 实际是"首次+4次重试"且只回退 BackendExpert（problem.md #21） |
 
 **不做的事**：模型 API 封装（A）、验证者 Agent（C）、桌面控制（C）、前端界面（D）
 
@@ -321,12 +346,16 @@ graph.add_edge("decompose_tasks", "assign_agents")
 graph.add_conditional_edges("assign_agents", route_to_expert)
 ```
 
+> **实现落差**：下面的状态图和 `dependencies`/`estimated_iterations` 字段是设计目标。实际 `workflow.py`
+> 是写死的固定流水线，不读取 `dependencies` 做动态路由，重试上限也固定写死 5 轮、不看 `estimated_iterations`
+> 估计值（problem.md #1/#3，见"现状速览"）。
+
 **输出结构（Pydantic）**：
 ```python
 class TaskDecomposition(BaseModel):
     tasks: List[SubTask]
-    dependencies: Dict[str, List[str]]  # 任务依赖 DAG
-    estimated_iterations: int
+    dependencies: Dict[str, List[str]]  # 任务依赖 DAG（生成了，workflow.py 未读取）
+    estimated_iterations: int          # 生成了，重试上限未采用此值
 
 class SubTask(BaseModel):
     id: str
@@ -340,6 +369,10 @@ class SubTask(BaseModel):
 ### 模块 4：Agent Skills 技能层
 
 **职责**：为各专家 Agent 提供可复用、按需激活的标准化技能单元
+
+> **实现落差**：`skills/{build,test,spec}/SKILL.md` 目前只是静态文档，没有任何运行时代码加载/解析它们。
+> 各专家 Agent 的 System Prompt 是硬编码在对应 `.py` 文件里的字符串，跟 SKILL.md 毫无关联（problem.md #6）。
+> 下面的三层加载机制是设计参考，不是已实现行为。
 
 **设计参考**：google-gemini/agent-skills（18k+ Stars）— 三层渐进式加载机制
 
@@ -413,6 +446,10 @@ Commander → [FrontendExpert] → Validator
 ### 模块 7：记忆管理（Memory）
 
 **职责**：跨任务记忆（已解决的问题、用户偏好）+ 会话内上下文管理
+
+> **实现落差**：全项目搜索 `checkpointer`/`MemorySaver`/`chromadb`/`mem0` 零命中，`graph.compile()` 未传
+> `checkpointer`。这不是"简化版记忆"，是完全没有——同一需求跑两次会得到两份互不参考的独立代码
+> （problem.md #7/#18）。CLAUDE.md 已标为 Week2 选做，不算失职，但对外介绍时不应暗示系统有跨会话学习能力。
 
 | 子模块 | 选型 | GitHub | Stars | 说明 |
 |--------|------|--------|-------|------|
@@ -514,29 +551,36 @@ ollama serve  # 默认监听 localhost:11434
 
 ## 两周开发计划
 
-### Week 1 — 核心骨架（必做）
+### Week 1 — 核心骨架（必做）✅ 全部完成
 
-| 天数 | 任务 | 产出 | 风险 |
+> 实际执行时用云端 DeepSeek API 作主力（见"AI 模型策略"），Ollama 降级为离线兜底，
+> 与本表 Day 1 原计划的"纯 Ollama"不同，其余产出均已达成。
+
+| 天数 | 任务 | 产出 | 状态 |
 |------|------|------|------|
-| Day 1 | 环境搭建：Ollama + Python venv + FastAPI 骨架 | `ollama run qwen2.5-coder:7b` 可用 | 显存不足降用 3b |
-| Day 2 | FastAPI 骨架 + WebSocket 推送框架 | `/api/tasks` REST + `/ws/tasks/{id}` WS | — |
-| Day 3 | LangGraph StateGraph 骨架 + Commander Node | 接收需求，输出 TaskDecomposition Pydantic | LangGraph 学习曲线 |
-| Day 4 | FrontendExpert + BackendExpert Agent | 生成 Tkinter Todo App 代码并写入文件 | LLM 推理慢 |
-| Day 5 | MCP 工具集成（filesystem + git） | Agent 可调用 MCP 工具读写文件 | — |
-| Day 6 | TestExpert Agent + 代码执行沙箱 | 生成并运行 pytest 测试 | — |
-| Day 7 | 联调：Commander → Expert 主链路端到端 | 控制台输入需求，后端完成代码生成 | — |
+| Day 1 | 环境搭建：Ollama + Python venv + FastAPI 骨架 | `ollama run qwen2.5-coder:7b` 可用 | ✅ 完成（后改主力为 DeepSeek API） |
+| Day 2 | FastAPI 骨架 + WebSocket 推送框架 | `/api/tasks` REST + `/ws/tasks/{id}` WS | ✅ 完成 |
+| Day 3 | LangGraph StateGraph 骨架 + Commander Node | 接收需求，输出 TaskDecomposition Pydantic | ✅ 完成 |
+| Day 4 | FrontendExpert + BackendExpert Agent | 生成 Tkinter Todo App 代码并写入文件 | ✅ 完成，且已通用化到跨应用（见"生成文件名通用化"） |
+| Day 5 | MCP 工具集成（filesystem + git） | Agent 可调用 MCP 工具读写文件 | ✅ 完成 filesystem；未接入 git MCP |
+| Day 6 | TestExpert Agent + 代码执行沙箱 | 生成并运行 pytest 测试 | ✅ 完成，含 JSON 报告解析（problem.md #17） |
+| Day 7 | 联调：Commander → Expert 主链路端到端 | 控制台输入需求，后端完成代码生成 | ✅ 完成 |
 
 ### Week 2 — 集成与演示
 
-| 天数 | 任务 | 产出 | 优先级 |
-|------|------|------|--------|
-| Day 8 | Validator Agent + 条件边闭环 | 代码不合格时触发修复循环 | 必做 |
-| Day 9 | mem0 记忆集成 + LangGraph Checkpointing | 支持断点续跑，跨会话记忆 | 选做 |
-| Day 10 | React 前端骨架 + React Flow Agent 图 | 可视化显示 Agent 节点状态 | 必做 |
-| Day 11 | xterm.js 实时日志 + 任务面板 | WebSocket 推流显示 Agent 输出 | 必做 |
-| Day 12 | UIValidator（pywinauto/Playwright）集成 | 自动截图验证生成的应用界面 | 选做 |
-| Day 13 | Docker Compose 打包 + 演示场景调试 | `docker-compose up` 一键启动全栈 | 必做 |
-| Day 14 | 演示录制 + 文档整理 | 演示视频 + README | 必做 |
+| 天数 | 任务 | 产出 | 优先级 | 状态 |
+|------|------|------|--------|------|
+| Day 8 | Validator Agent + 条件边闭环 | 代码不合格时触发修复循环 | 必做 | ✅ 完成，但闭环只回退 BackendExpert（problem.md #21，未修复） |
+| Day 9 | mem0 记忆集成 + LangGraph Checkpointing | 支持断点续跑，跨会话记忆 | 选做 | ❌ 未做，`graph.compile()` 未传 checkpointer（problem.md #7） |
+| Day 10 | React 前端骨架 + React Flow Agent 图 | 可视化显示 Agent 节点状态 | 必做 | ✅ 完成，已接真实后端（不再是 Mock） |
+| Day 11 | xterm.js 实时日志 + 任务面板 | WebSocket 推流显示 Agent 输出 | 必做 | ✅ 完成，WS 已支持多订阅者重放（problem.md #28） |
+| Day 12 | UIValidator（pywinauto/Playwright）集成 | 自动截图验证生成的应用界面 | 选做 | ✅ 完成，C 的真实 Validator 已接入主链路 |
+| Day 13 | Docker Compose 打包 + 演示场景调试 | `docker-compose up` 一键启动全栈 | 必做 | ❌ 未做 |
+| Day 14 | 演示录制 + 文档整理 | 演示视频 + README | 必做 | ❌ 未做 |
+
+**已完成但不在原计划里的额外工作**：Commander/Validator/三专家 Token 记账全部接入真实数据（problem.md #12）；
+`validator_stub.py` 静默造假、WebSocket 单消费者卡死、`run()` 异常处理与空交付物、Windows GBK 控制台崩溃
+四个真实 bug 修复（problem.md #27/#28/#29/#31）；两轮全仓库代码审查（problem.md #19-26、#27-34）。
 
 ---
 
@@ -628,13 +672,16 @@ ollama serve  # 默认监听 localhost:11434
 
 | 风险 | 对策 |
 |------|------|
-| 本地 LLM 推理慢（7B 约 10-30s/次） | Commander 用 Claude Haiku API 补充；限制 max_tokens=2048 |
-| Agent 无限循环 | `state["iteration_count"]` 计数，超 5 轮强制终止 |
-| 桌面自动化不稳定 | 演示用 **Web 应用**（Playwright 最稳），桌面控制作加分项 |
-| LangGraph 学习曲线 | Day 1-2 专门跑通 StateGraph Hello World，先单 Node 再多 Node |
-| mem0 集成复杂 | Week 2 再引入；Week 1 用 LangGraph 内置 MemorySaver 先跑通主流程 |
-| OpenClaw 是否适合桌面控制未验证 | OpenClaw 真实存在（此前误判为幻觉，已勘误），但接入成本高于 pywinauto；C 先用 pywinauto 跑通主链路，OpenClaw 作为备选评估项 |
-| 两周时间紧 | **必做**：Commander→Expert 主链路 + 前端可视化；**选做**：Validator 闭环、mem0、桌面 UI 验证 |
+| 本地 LLM 推理慢（7B 约 10-30s/次） | 已切换云端 DeepSeek API 为主力，Ollama 仅离线兜底，问题已不复存在 |
+| Agent 无限循环 | `state["iteration_count"]` 计数，超 5 轮强制终止；但计数逻辑实际是"第一次+4次重试"，比文档少一轮（problem.md #21） |
+| 桌面自动化不稳定 | C 的真实 Validator 已用 pywinauto 跑通主链路 |
+| LangGraph 学习曲线 | 已跑通，StateGraph 主链路稳定运行 |
+| mem0 集成复杂 | 仍未引入，Week2 选做维持原状（problem.md #7） |
+| OpenClaw 是否适合桌面控制未验证 | 已决定不用，C 用 pywinauto 完整跑通主链路，OpenClaw 未接入 |
+| 两周时间紧 | 必做项基本完成，Docker 打包 + 演示录制未做（见"两周开发计划"Day 13/14） |
+| **动态编排/Skills 层/记忆层为静态占位**（新增） | 已在"现状速览"明确标注，不作为已实现能力对外宣传；是否补齐见"待决策事项" |
+| **MCP `run_command`/`read_file`/`write_file` 无沙箱防护**（新增） | 当前调用方均为写死路径/命令，主链路安全；扩大暴露范围前需补白名单/目录限制（problem.md #24/#25） |
+| **整套编排流水线代码零自动化测试**（新增） | 两周演示项目暂未覆盖，是过往几个 bug 长期未被发现的系统性原因（problem.md #34） |
 
 ---
 

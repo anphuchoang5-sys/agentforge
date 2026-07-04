@@ -71,7 +71,7 @@ def backend_expert_node(state: ProjectState) -> dict:
 请实现完整的 Python 后端代码。"""
 
     llm = ChatOpenAI(
-        model=os.getenv("EXPERT_MODEL", "deepseek-coder"),
+        model=os.getenv("EXPERT_MODEL", "deepseek-v4-pro"),
         api_key=os.getenv("DEEPSEEK_API_KEY"),
         base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
         temperature=0.2,

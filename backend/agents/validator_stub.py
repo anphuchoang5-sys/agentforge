@@ -38,8 +38,20 @@ def validate(
         转发给 C 读取真实测试结果（见 problem.md 第17条）。
     """
     # 策略1：直接 Python 调用 C 的 validate()（同仓库，推荐）
+    #
+    # 只在"C 的模块导入失败"（环境没装好，比如 pywinauto 缺失）时才降级到
+    # 策略2/3——一旦导入成功，真正调用 c_validate() 就不再包 try/except。
+    # 之前这里是 except Exception 一网打尽，导致 C 的 validate() 内部真实
+    # 抛出的业务 bug 会被当成"C 不可用"处理，悄悄落到下面策略3的简陋 Mock
+    # 上，Mock 只查"文件存不存在"+"文本里有没有'failed'字样"就能编出一个
+    # passed=True——这正是 CLAUDE.md 明确禁止的"静默兜底成假成功"
+    # （problem.md 第27条）。现在的原则是：环境不可用 → 合理降级；
+    # 代码本身报错 → 必须原样往上抛，让调用方看到真实失败，不能被吃掉。
     try:
         from backend.agents.validator import validate as c_validate
+    except ImportError as e:
+        print(f"[Validator] C 的验证模块导入失败（环境未就绪），降级到策略2/3: {e}")
+    else:
         report = c_validate(
             app_path=app_path,
             criteria=criteria,
@@ -48,10 +60,12 @@ def validate(
         )
         # TestReport → dict（和原来的 Mock 返回格式一致）
         return report.model_dump()
-    except Exception as e:
-        print(f"[Validator] C 的 validate() 直接调用失败: {e}")
 
     # 策略2：HTTP 调用 C 的 FastAPI 服务（跨机器 / 需要隔离时用）
+    # 同理：只有"连不上/网络层失败"才降级，C 服务返回的真实错误响应
+    # （resp.raise_for_status() 抛出的 HTTPError）也算网络层失败，会降级；
+    # 但如果 C 的服务返回了格式错误的 JSON，那是她那边的真 bug，
+    # resp.json() 抛出的 JSONDecodeError 不在 RequestException 之内，会原样往上抛
     validator_url = os.getenv("VALIDATOR_URL")
     if validator_url:
         try:
@@ -63,7 +77,7 @@ def validate(
             )
             resp.raise_for_status()
             return resp.json()
-        except Exception as e:
+        except requests.RequestException as e:
             print(f"[Validator] C 的 HTTP 服务调用失败，降级到 Mock: {e}")
 
     # 策略3：本地 Mock 降级

@@ -17,6 +17,7 @@ checkers.py — 验证者四项检查实现
 import json
 import subprocess
 import py_compile
+import time
 from pathlib import Path
 from typing import Tuple, List
 
@@ -239,7 +240,8 @@ def llm_check(
 
     # 调用 A 的 ollama_client
     try:
-        from backend.agents.commander.ollama_client import generate
+        from backend.agents.commander.ollama_client import generate_with_metrics
+        from backend.agents.commander.call_log import log_call
     except ImportError:
         logs.append("[llm] ⚠️ ollama_client 导入失败，降级为桩（返回通过）")
         for c in criteria:
@@ -255,12 +257,34 @@ def llm_check(
     prompt = build_check_prompt(criteria, code_content)
 
     # 调用 LLM
+    # 用 generate_with_metrics 而不是裸 generate：同一个 API 调用，多返回
+    # duration_ms/tokens，调完记一笔进 call_log（见 problem.md 第12条，
+    # Validator 之前跟 Commander 一样是账本上的空白）
+    start = time.time()
     try:
-        raw = generate(prompt)
+        metrics = generate_with_metrics(prompt)
+        raw = metrics["response"]
+        log_call(
+            caller="validator",
+            model=metrics["model"],
+            prompt=prompt[:100],
+            duration_ms=metrics["duration_ms"],
+            tokens=metrics["tokens"],
+            success=True,
+        )
     except Exception as e:
         # LLM 不可用 → 降级为 warning（不阻断流程）
         msg = f"LLM 调用失败: {type(e).__name__}: {str(e)[:150]}"
         logs.append(f"[llm] ⚠️ {msg}")
+        log_call(
+            caller="validator",
+            model="unknown",
+            prompt=prompt[:100],
+            duration_ms=round((time.time() - start) * 1000),
+            tokens=0,
+            success=False,
+            error_msg=str(e)[:200],
+        )
         failed.append(FailedTest(name="llm", reason=msg, severity="warning"))
         return True, logs, failed  # warning 不阻断
 

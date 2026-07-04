@@ -102,21 +102,42 @@ def run(
     tracer = get_tracer()
 
     with tracer.start_as_current_span("run", attributes={"user_input": user_input}):
-        if on_event is None:
-            final_state = graph.invoke(initial_state)
-        else:
-            # stream_mode="updates" 每个节点跑完就吐一次 {节点名: 该节点返回的增量dict}，
-            # 不用等整张图跑完，可以实时往外推。手动把每次增量合并成完整 final_state
-            # （LangGraph 内部 invoke() 也是做的同样的合并，这里只是自己再做一遍）。
-            final_state = dict(initial_state)
-            for chunk in graph.stream(initial_state, stream_mode="updates"):
-                for node_name, node_output in chunk.items():
-                    final_state.update(node_output)
-                    with node_span(node_name):
-                        on_event(node_name, node_output)
+        # 图执行本身不包 try/except——LangGraph 节点内部（decompose_node/
+        # validator_node）按项目原则该抛的异常会原样抛出来，这里只是把裸的
+        # 内部异常（可能是 Pydantic 校验错误、LangGraph 内部报错等，单看
+        # 类型/message 不知道是 run() 的哪一步炸的）包装成一条说得清楚
+        # "是需求处理流程失败"的 RuntimeError，不是把失败吞掉或伪装成功
+        # （problem.md 第29条）
+        try:
+            if on_event is None:
+                final_state = graph.invoke(initial_state)
+            else:
+                # stream_mode="updates" 每个节点跑完就吐一次 {节点名: 该节点返回的增量dict}，
+                # 不用等整张图跑完，可以实时往外推。手动把每次增量合并成完整 final_state
+                # （LangGraph 内部 invoke() 也是做的同样的合并，这里只是自己再做一遍）。
+                final_state = dict(initial_state)
+                for chunk in graph.stream(initial_state, stream_mode="updates"):
+                    for node_name, node_output in chunk.items():
+                        final_state.update(node_output)
+                        with node_span(node_name):
+                            on_event(node_name, node_output)
+        except Exception as e:
+            raise RuntimeError(
+                f"代码生成流程执行失败（需求：{user_input!r}）："
+                f"{type(e).__name__}: {e}"
+            ) from e
 
-        # 打包交付物（用 BackendExpert 解析后的真实目录，不是最初的基准目录）
+        # 打包交付物之前先确认真的生成出东西了——没有任何代码产出的话，
+        # _zip_output() 对着一个空/不存在的目录跑不会报错，只会静默产出一个
+        # "格式合法但内容为空"的 zip 冒充交付物，这正是 CLAUDE.md 明确禁止的
+        # "静默兜底成假成功"（problem.md 第29条），必须在这里主动拦下来
         final_output_dir = final_state["app_output_dir"]
+        if not final_state.get("backend_code") and not final_state.get("frontend_code"):
+            raise RuntimeError(
+                f"代码生成流程未产出任何代码（需求：{user_input!r}，"
+                f"输出目录：{final_output_dir}），拒绝打包空交付物"
+            )
+
         deliverable = _zip_output(final_output_dir)
 
         result = {
