@@ -2,10 +2,11 @@
 test_expert.py — 测试专家 Agent
 B 核心产出物
 
-读取 backend_code → 生成 pytest 测试 → 真实运行 → 把结果写进白板
+读取 backend_code → 生成 pytest 测试 → collect-only 验证 → 真实运行 → 把结果写进白板
 """
 
 import os
+import re
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from backend.graph.project_state import ProjectState
@@ -93,8 +94,45 @@ def test_expert_node(state: ProjectState) -> dict:
     test_code = _extract_code(response.content)
     test_path = write_file(f"{state['app_output_dir']}/test_app.py", test_code)
 
-    # 真实运行 pytest，顺带生成 JSON 格式报告（--json-report）供 C 的 pytest_check 读取，
-    # 不然 C 那边永远拿不到结构化的真实测试结果，只能靠桩函数跳过
+    # ── collect-only 验证：生成后立即检查测试是否可被 pytest 发现 ──
+    # 如果收集到 0 个测试 → LLM 生成的是无效测试代码 → 直接返回失败，触发重试
+    print("[TestExpert] 验证测试收集（--collect-only）...")
+    collect_result = run_command(
+        "python -m pytest --collect-only -q",
+        cwd=state["app_output_dir"],
+        timeout=15,
+    )
+    collect_output = collect_result["stdout"] + collect_result["stderr"]
+
+    # 从输出中提取 "collected N items" 或 "no tests collected"
+    collected_match = re.search(r"collected\s+(\d+)\s+items?", collect_output)
+    if collected_match:
+        test_count = int(collected_match.group(1))
+    elif "no tests" in collect_output.lower():
+        test_count = 0
+    else:
+        # 兜底：统计带有 "::" 的行数（每条代表一个测试函数）
+        test_lines = [l for l in collect_output.splitlines() if "::" in l and not l.strip().startswith("=")]
+        test_count = len(test_lines)
+
+    print(f"[TestExpert] collect-only: 收集到 {test_count} 个测试")
+
+    if test_count == 0:
+        error_msg = (
+            f"[TestExpert] ❌ 测试生成失败：pytest 未收集到任何测试用例。"
+            f"LLM 生成的代码中可能没有以 test_ 开头的函数，或存在语法错误导致 pytest 无法解析。"
+            f"\n--- 生成的测试代码 ---\n{test_code[:800]}"
+        )
+        print(error_msg)
+        return {
+            "test_code": test_code,
+            "test_path": test_path,
+            "test_results": f"collect-only 失败：收集到 0 个测试\n{collect_output[:1000]}",
+            "test_passed": False,
+            "pytest_report_path": None,
+        }
+
+    # ── 测试收集通过，真实运行 pytest ──
     print("[TestExpert] 运行 pytest...")
     report_filename = "pytest_report.json"
     result = run_command(

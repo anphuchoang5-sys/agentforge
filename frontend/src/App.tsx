@@ -1,7 +1,8 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAppStore, type AgentStatus } from '@/store/appStore'
 import { startAgentWorkflow as realStartAgentWorkflow } from '@/lib/agentClient'
 import { startAgentWorkflow as mockStartAgentWorkflow } from '@/mocks/mockWebSocket'
+import { fetchTokenMetrics } from '@/lib/api'
 
 // 通过环境变量 VITE_USE_MOCK 控制模式：
 //   VITE_USE_MOCK=true  → 使用 Mock 模拟数据（前端独立开发/演示）
@@ -70,6 +71,21 @@ function ImageIcon() {
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <circle cx="8.5" cy="8.5" r="1.5" />
       <path d="M21 15l-5-5L5 21" />
+    </svg>
+  )
+}
+
+function RefreshIcon({ spinning }: { spinning?: boolean }) {
+  return (
+    <svg
+      className={`w-3.5 h-3.5 ${spinning ? 'animate-spin' : ''}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+    >
+      <path d="M21 2v6h-6M3 22v-6h6" />
+      <path d="M21 8A9 9 0 0 0 4.6 14M3 16a9 9 0 0 0 16.4-6" />
     </svg>
   )
 }
@@ -250,6 +266,36 @@ function App() {
     },
     [logs.length]
   )
+
+  // Token 消耗数据：初始用静态兜底，任务完成后自动从后端拉取真实数据
+  const [tokenData, setTokenData] = useState(TOKEN_DATA)
+  const [tokenLoading, setTokenLoading] = useState(false)
+  const prevRunning = useRef(isRunning)
+
+  const refreshTokens = useCallback(() => {
+    setTokenLoading(true)
+    fetchTokenMetrics()
+      .then((data) => {
+        if (data && data.length > 0) setTokenData(data)
+      })
+      .catch(() => {
+        // 接口失败静默兜底，保留现有数据（可能是 TOKEN_DATA 或上一轮的真实数据）
+      })
+      .finally(() => setTokenLoading(false))
+  }, [])
+
+  // 任务执行完成时（isRunning: true → false）自动刷新
+  useEffect(() => {
+    if (prevRunning.current && !isRunning) {
+      refreshTokens()
+    }
+    prevRunning.current = isRunning
+  }, [isRunning, refreshTokens])
+
+  // 页面首次加载时也拉一次
+  useEffect(() => {
+    refreshTokens()
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRun = () => {
     const input = userInput.trim()
@@ -513,12 +559,23 @@ function App() {
 
         {/* --- Token 消耗统计 --- */}
         <div className="mt-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">
-            📊 Token 消耗统计
-          </h2>
+          <div className="flex items-center gap-2 mb-4">
+            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              📊 Token 消耗统计
+            </h2>
+            <button
+              onClick={refreshTokens}
+              disabled={tokenLoading}
+              className="ml-auto flex items-center gap-1 text-[11px] px-2 py-1 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
+              title="刷新 Token 数据"
+            >
+              <RefreshIcon spinning={tokenLoading} />
+              刷新
+            </button>
+          </div>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart
-              data={TOKEN_DATA}
+              data={tokenData}
               margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
             >
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />

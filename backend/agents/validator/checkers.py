@@ -284,6 +284,11 @@ def llm_check(
             criteria_text = item.get("criteria", "?")
             verdict = item.get("verdict", "unknown")
             evidence = item.get("evidence", "")
+            # 尊重 LLM 返回的 severity，未指定时默认为 "error"
+            severity = item.get("severity", "error")
+            if severity not in ("error", "warning"):
+                severity = "error"
+
             if verdict == "passed":
                 logs.append(f"[llm] ✅ {criteria_text} — {evidence[:80]}")
             elif verdict in ("failed", "partial"):
@@ -291,7 +296,7 @@ def llm_check(
                 failed.append(FailedTest(
                     name=f"llm:{criteria_text}",
                     reason=evidence[:200],
-                    severity="error",
+                    severity=severity,
                 ))
             else:
                 logs.append(f"[llm] ⚠️ {criteria_text} — verdict={verdict}")
@@ -299,7 +304,8 @@ def llm_check(
         if summary:
             logs.append(f"[llm] 📋 {summary}")
 
-        passed = len(failed) == 0
+        # 仅 error 级别算失败，warning 不影响 passed
+        passed = not any(f.severity == "error" for f in failed)
         return passed, logs, failed
 
     except (json.JSONDecodeError, KeyError) as e:
