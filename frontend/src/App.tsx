@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback } from 'react'
 import { useAppStore, type AgentStatus } from '@/store/appStore'
-import { startAgentWorkflow } from '@/lib/agentClient'
-import { fetchTokenMetrics, type TokenMetric } from '@/lib/api'
+import { startAgentWorkflow } from '@/mocks/mockWebSocket'
 import {
   BarChart,
   Bar,
@@ -54,6 +53,16 @@ function FlowIcon() {
       <path d="M12 7v4" />
       <path d="M12 15v2" />
       <path d="M7 17l-2 2m0 0l2 2m-2-2h14m0 0l-2-2m2 2l2 2" />
+    </svg>
+  )
+}
+
+function ImageIcon() {
+  return (
+    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="M21 15l-5-5L5 21" />
     </svg>
   )
 }
@@ -151,30 +160,45 @@ function ProgressBar({ progress }: { progress: number }) {
   )
 }
 
-// ============ 日志行 ============
+// ============ 日志行（按前缀着色） ============
 
 function LogLine({
   entry,
 }: {
   entry: { agent: string; message: string; level: string; timestamp: number }
 }) {
-  const levelColors: Record<string, string> = {
-    info: 'text-slate-400 dark:text-slate-500',
-    warn: 'text-amber-500',
-    error: 'text-red-500',
-    success: 'text-emerald-500',
-  }
   const time = new Date(entry.timestamp).toLocaleTimeString('zh-CN', {
     hour12: false,
   })
 
+  // 按消息前缀 emoji 决定文字颜色
+  let textColor = 'text-slate-300 dark:text-slate-300'  // 默认白色
+  if (entry.message.startsWith('✅')) {
+    textColor = 'text-emerald-400'
+  } else if (entry.message.startsWith('❌')) {
+    textColor = 'text-red-400'
+  } else if (entry.message.startsWith('⏭️')) {
+    textColor = 'text-slate-500'
+  }
+
+  // 按 level 作为后备着色（无前缀时）
+  const levelColors: Record<string, string> = {
+    info: 'text-slate-300 dark:text-slate-300',
+    warn: 'text-amber-400',
+    error: 'text-red-400',
+    success: 'text-emerald-400',
+  }
+  const fallbackColor = levelColors[entry.level] || 'text-slate-300'
+
   return (
     <div className="flex gap-2 py-0.5 font-mono text-xs leading-relaxed animate-slide-in">
-      <span className="text-slate-400 dark:text-slate-600 flex-shrink-0">{time}</span>
-      <span className="text-violet-500 dark:text-violet-400 flex-shrink-0 font-semibold">
+      <span className="text-slate-500 dark:text-slate-600 flex-shrink-0">{time}</span>
+      <span className="text-violet-400 dark:text-violet-400 flex-shrink-0 font-semibold">
         [{entry.agent}]
       </span>
-      <span className={levelColors[entry.level] || 'text-slate-400'}>{entry.message}</span>
+      <span className={entry.message.match(/^[✅❌⏭️]/) ? textColor : fallbackColor}>
+        {entry.message}
+      </span>
     </div>
   )
 }
@@ -187,6 +211,16 @@ const EXAMPLE_PROMPTS = [
   '做一个天气预报查询工具，输入城市名显示天气信息',
 ]
 
+// ============ Token 消耗 Mock 数据 ============
+
+const TOKEN_DATA = [
+  { name: 'Commander', tokens: 1200 },
+  { name: 'Backend', tokens: 600 },
+  { name: 'Frontend', tokens: 400 },
+  { name: 'Test', tokens: 300 },
+  { name: 'UIValidator', tokens: 200 },
+]
+
 // ============ 主组件 ============
 
 function App() {
@@ -196,6 +230,10 @@ function App() {
     logs,
     nodeStatus,
     isRunning,
+    iteration,
+    screenshotBase64,
+    validationPassed,
+    failedTests,
     setUserInput,
   } = useAppStore()
 
@@ -205,20 +243,6 @@ function App() {
     },
     [logs.length]
   )
-
-  // Token 消耗统计：接的是真实后端 /api/metrics/tokens，不是假数据。
-  // 页面加载时拉一次；每次任务跑完（isRunning: true → false）再拉一次刷新最新数据。
-  const [tokenData, setTokenData] = useState<TokenMetric[]>([])
-  const [tokenError, setTokenError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetchTokenMetrics()
-      .then((data) => {
-        setTokenData(data)
-        setTokenError(null)
-      })
-      .catch((err) => setTokenError(err instanceof Error ? err.message : String(err)))
-  }, [isRunning])
 
   const handleRun = () => {
     const input = userInput.trim()
@@ -254,7 +278,7 @@ function App() {
               多角色 Agent 协作平台
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-3">
             <span
               className={`text-xs px-2 py-0.5 rounded-full ${
                 isRunning
@@ -308,15 +332,28 @@ function App() {
             ))}
           </div>
 
-          {/* 进度条 */}
-          <div className="mt-4">
-            <ProgressBar progress={progress} />
+          {/* 进度条 + 迭代轮次 */}
+          <div className="mt-4 flex items-end gap-4">
+            <div className="flex-1">
+              <ProgressBar progress={progress} />
+            </div>
+            {iteration > 0 && (
+              <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800">
+                <span className="text-[10px] text-indigo-500 dark:text-indigo-400">🔄</span>
+                <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+                  第 {iteration} 轮验证
+                </span>
+                {validationPassed && iteration > 0 && (
+                  <span className="text-[10px] text-emerald-500">✓ 已通过</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
         {/* --- 双栏布局 --- */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* 左栏：Agent 流程图 */}
+          {/* 左栏：Agent 流程图 + 验证结果概要 */}
           <div className="lg:col-span-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <FlowIcon />
@@ -351,40 +388,119 @@ function App() {
                 <StatusDot status="error" /> 失败
               </span>
             </div>
+
           </div>
 
-          {/* 右栏：终端日志 */}
-          <div className="lg:col-span-2 bg-slate-900 dark:bg-slate-950 rounded-xl border border-slate-700 dark:border-slate-800 shadow-sm overflow-hidden">
-            {/* 标题栏 */}
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 dark:bg-slate-900 border-b border-slate-700 dark:border-slate-800">
-              <div className="flex gap-1.5">
-                <span className="w-3 h-3 rounded-full bg-red-500/80" />
-                <span className="w-3 h-3 rounded-full bg-amber-500/80" />
-                <span className="w-3 h-3 rounded-full bg-emerald-500/80" />
-              </div>
-              <TerminalIcon />
-              <span className="text-xs text-slate-400 font-semibold">终端日志</span>
-              <span className="text-[10px] text-slate-600 ml-auto">
-                {logs.length} 条
-              </span>
-            </div>
-            {/* 日志内容 */}
-            <div
-              ref={logsEndRef}
-              className="h-[420px] overflow-y-auto p-4 log-scrollbar"
-            >
-              {logs.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-2 opacity-60">
-                  <TerminalIcon />
-                  <p className="text-xs">等待任务启动...</p>
-                  <p className="text-[10px] text-slate-700">
-                    输入需求并点击「开始执行」
-                  </p>
+          {/* 右栏：截图 + 终端日志 + 失败测试 */}
+          <div className="lg:col-span-2 space-y-4">
+            {/* 截图展示区 */}
+            {screenshotBase64 && (
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                  <ImageIcon />
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                    应用截图
+                  </span>
+                  <span className="text-[10px] text-slate-400 ml-auto">
+                    第 {iteration} 轮
+                  </span>
                 </div>
-              ) : (
-                logs.map((entry) => <LogLine key={entry.id} entry={entry} />)
-              )}
+                <div className="p-3 bg-slate-100 dark:bg-slate-950">
+                  <img
+                    src={`data:image/png;base64,${screenshotBase64}`}
+                    alt="应用运行截图"
+                    className="max-w-full h-auto rounded border border-slate-200 dark:border-slate-700 mx-auto"
+                    style={{ maxHeight: 320 }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* 终端日志 */}
+            <div className="bg-slate-900 dark:bg-slate-950 rounded-xl border border-slate-700 dark:border-slate-800 shadow-sm overflow-hidden">
+              {/* 标题栏 */}
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 dark:bg-slate-900 border-b border-slate-700 dark:border-slate-800">
+                <div className="flex gap-1.5">
+                  <span className="w-3 h-3 rounded-full bg-red-500/80" />
+                  <span className="w-3 h-3 rounded-full bg-amber-500/80" />
+                  <span className="w-3 h-3 rounded-full bg-emerald-500/80" />
+                </div>
+                <TerminalIcon />
+                <span className="text-xs text-slate-400 font-semibold">终端日志</span>
+                <span className="text-[10px] text-slate-600 ml-auto">
+                  {logs.length} 条
+                </span>
+              </div>
+              {/* 日志内容 */}
+              <div
+                ref={logsEndRef}
+                className="h-[360px] overflow-y-auto p-4 log-scrollbar"
+              >
+                {logs.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-2 opacity-60">
+                    <TerminalIcon />
+                    <p className="text-xs">等待任务启动...</p>
+                    <p className="text-[10px] text-slate-700">
+                      输入需求并点击「开始执行」
+                    </p>
+                  </div>
+                ) : (
+                  logs.map((entry) => <LogLine key={entry.id} entry={entry} />)
+                )}
+              </div>
             </div>
+
+            {/* 失败测试明细 */}
+            {failedTests.length > 0 && (
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-900">
+                  <span className="text-xs font-semibold text-red-700 dark:text-red-400">
+                    ❌ 失败测试 ({failedTests.length})
+                  </span>
+                </div>
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {failedTests.map((ft, i) => (
+                    <div
+                      key={i}
+                      className={`px-4 py-2.5 flex items-start gap-3 ${
+                        ft.severity === 'error'
+                          ? 'bg-red-50/50 dark:bg-red-950/10'
+                          : 'bg-amber-50/50 dark:bg-amber-950/10'
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                          ft.severity === 'error'
+                            ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400'
+                            : 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400'
+                        }`}
+                      >
+                        {ft.severity === 'error' ? '✕' : '!'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                            {ft.name}
+                          </span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                              ft.severity === 'error'
+                                ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
+                            }`}
+                          >
+                            {ft.severity}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          {ft.reason}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -393,20 +509,11 @@ function App() {
           <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">
             📊 Token 消耗统计
           </h2>
-          {tokenError ? (
-            <div className="h-[280px] flex items-center justify-center text-sm text-red-500">
-              无法获取 Token 统计: {tokenError}
-            </div>
-          ) : tokenData.length === 0 ? (
-            <div className="h-[280px] flex items-center justify-center text-sm text-slate-400">
-              还没有调用记录，跑一次任务后这里会显示真实 Token 消耗
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart
-                data={tokenData}
-                margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
-              >
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart
+              data={TOKEN_DATA}
+              margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
+            >
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis
                   dataKey="name"
@@ -436,7 +543,6 @@ function App() {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          )}
         </div>
       </main>
 
@@ -448,6 +554,15 @@ function App() {
           <span>Ollama + Qwen2.5-Coder</span>
           <span className="text-slate-300 dark:text-slate-700">|</span>
           <span>LangGraph 编排</span>
+          {iteration > 0 && (
+            <>
+              <span className="text-slate-300 dark:text-slate-700">|</span>
+              <span>验证轮次: {iteration}/5</span>
+              <span className={validationPassed ? 'text-emerald-500' : 'text-red-400'}>
+                {validationPassed ? '✓ 通过' : '✗ 未通过'}
+              </span>
+            </>
+          )}
           {isRunning && (
             <>
               <span className="text-slate-300 dark:text-slate-700">|</span>
