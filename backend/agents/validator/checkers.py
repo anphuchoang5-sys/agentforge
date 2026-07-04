@@ -82,7 +82,7 @@ def ruff_check(app_path: str) -> Tuple[bool, List[str], List[FailedTest]]:
     target = Path(app_path)
     ruff_target = str(target.parent) if target.is_file() else str(target)
 
-    cmd = ["ruff", "check", "--config", _RUFF_CONFIG, "--output-format=json", ruff_target]
+    cmd = [r"C:\Users\H1882\AppData\Local\Python\pythoncore-3.14-64\Scripts\ruff.exe", "check", "--config", _RUFF_CONFIG, "--output-format=json", ruff_target]
     logs.append(f"[ruff] 执行: {' '.join(cmd)}")
 
     try:
