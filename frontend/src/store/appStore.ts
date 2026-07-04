@@ -19,6 +19,22 @@ export interface LogEntry {
   level: 'info' | 'warn' | 'error' | 'success'
 }
 
+export interface FailedTest {
+  name: string
+  reason: string
+  severity: 'error' | 'warning'
+}
+
+export interface ValidationResult {
+  passed: boolean
+  logs: string[]
+  screenshotBase64: string
+  failedTests: FailedTest[]
+  iteration: number
+  appPath: string
+  appType: string
+}
+
 export type AgentId =
   | 'commander'
   | 'backend'
@@ -59,13 +75,47 @@ interface AppState {
   // 当前任务 ID
   currentTaskId: string | null
 
-  // 动作
+  // ===== Validator 结果 =====
+
+  // 是否通过验证
+  validationPassed: boolean
+
+  // 验证日志（逐条展示）
+  validationLogs: string[]
+
+  // 截图 base64 PNG（空串 = 暂无截图）
+  screenshotBase64: string
+
+  // 失败测试明细
+  failedTests: FailedTest[]
+
+  // 当前迭代轮次（1-5）
+  iteration: number
+
+  // 应用路径 & 类型
+  appPath: string
+  appType: string
+
+  // ===== 后端健康状态 =====
+  backendHealthy: boolean | null  // null = 探测中 / 未探测
+  healthDetails: Record<string, boolean>  // 各组件可用状态
+
+  // ===== 动作 =====
   setUserInput: (input: string) => void
   setProgress: (progress: number) => void
   addLog: (entry: Omit<LogEntry, 'id'>) => void
   updateNodeStatus: (id: AgentId, status: AgentStatus) => void
   setRunning: (running: boolean) => void
   setCurrentTaskId: (id: string | null) => void
+
+  // Validator 相关
+  setValidationResult: (result: ValidationResult) => void
+  setIteration: (iteration: number) => void
+  setScreenshot: (base64: string) => void
+
+  // 健康检查
+  setBackendHealth: (healthy: boolean | null, details: Record<string, boolean>) => void
+
   reset: () => void
 }
 
@@ -80,6 +130,19 @@ export const useAppStore = create<AppState>((set) => ({
   nodeStatus: initialNodes,
   isRunning: false,
   currentTaskId: null,
+
+  // Validator 结果初始值
+  validationPassed: false,
+  validationLogs: [],
+  screenshotBase64: '',
+  failedTests: [],
+  iteration: 0,
+  appPath: '',
+  appType: '',
+
+  // 健康检查初始值
+  backendHealthy: null,
+  healthDetails: {},
 
   setUserInput: (input) => set({ userInput: input }),
 
@@ -104,6 +167,26 @@ export const useAppStore = create<AppState>((set) => ({
 
   setCurrentTaskId: (id) => set({ currentTaskId: id }),
 
+  // Validator 相关 actions
+  setValidationResult: (result) =>
+    set({
+      validationPassed: result.passed,
+      validationLogs: result.logs,
+      screenshotBase64: result.screenshotBase64,
+      failedTests: result.failedTests,
+      iteration: result.iteration,
+      appPath: result.appPath,
+      appType: result.appType,
+    }),
+
+  setIteration: (iteration) => set({ iteration }),
+
+  setScreenshot: (base64) => set({ screenshotBase64: base64 }),
+
+  // 健康检查
+  setBackendHealth: (healthy, details) =>
+    set({ backendHealthy: healthy, healthDetails: details }),
+
   reset: () => {
     logIdCounter = 0
     set({
@@ -113,6 +196,13 @@ export const useAppStore = create<AppState>((set) => ({
       nodeStatus: initialNodes.map((n) => ({ ...n, status: 'idle' as AgentStatus })),
       isRunning: false,
       currentTaskId: null,
+      validationPassed: false,
+      validationLogs: [],
+      screenshotBase64: '',
+      failedTests: [],
+      iteration: 0,
+      appPath: '',
+      appType: '',
     })
   },
 }))

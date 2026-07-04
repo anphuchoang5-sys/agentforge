@@ -46,6 +46,18 @@
 | **项目仓库** | 仓库 `agentforge` 初始化 + CLAUDE.md | 组员 | 07-01 |
 | **项目仓库** | 架构设计文档（HTML 页面） | 组员 | 07-01 |
 
+| D-前端 | Vite + React + TypeScript 项目初始化 | D | 07-02 |
+| D-前端 | TailwindCSS + shadcn/ui 组件库配置 | D | 07-02 |
+| D-前端 | Zustand 全局状态管理（进度/日志/节点状态） | D | 07-03 |
+| D-前端 | Mock WebSocket 模拟 Agent 执行流程（接口优先顺序） | D | 07-03 |
+| D-前端 | Agent 流程图节点状态展示（6个角色，蓝/绿/灰状态） | D | 07-03 |
+| D-前端 | 实时终端日志（xterm风格，自动滚动） | D | 07-03 |
+| D-前端 | Token 消耗柱状图（Recharts） | D | 07-03 |
+| D-前端 | 前端代码已推送至 Gitee | D | 07-03 |
+| D-前端 | 适配 Validator 接口格式（截图/日志颜色/迭代轮次/failed_tests） | D | 07-04 |
+| D-前端 | 前端界面已就绪，等待后端 WebSocket 真实对接 | D | 07-04 |
+| D-前端 | 前端对接真实后端 WebSocket，联调通过（Commander → Backend → Frontend → Test → Validator 全流程） | D | 07-04 |
+
 ### 🔄 进行中
 
 | 模块 | 当前任务 | 负责人 | 备注 |
@@ -57,7 +69,8 @@
 | 模块 | 任务 | 负责人 |
 |------|------|--------|
 | C-验证测试 | 验证者 Agent Prompt + ruff 检查 + pywinauto 桌面控制 | C |
-| D-前端 | React 搭建 + WebSocket + DAG 可视化 + 指标面板 | D |
+
+
 | 联调 | A→B→C 全链路端到端测试（接入 C 的真实验证服务） | 全员 |
 | 部署 | Docker Compose 一键启动 | 全员 |
 | 演示 | 演示场景调试 + 录制 | 全员 |
@@ -108,3 +121,5 @@ result = run("帮我做一个待办事项桌面应用")
 | LLM 生成代码含 lint 级问题（未用变量/== True 比较等） | 低 | 低 | 不影响功能，已用 ruff 抽查确认无真实 bug；是否引入 ruff 自动修复关卡待评估 |
 | ~~本地 7B 推理慢（~10-30s/次）~~ | ✅ 已解决 | — | 已切换 DeepSeek API 为主力 |
 | ~~langchain-ollama 兼容性差~~ | ✅ 已解决 | — | 改用 requests 直连更稳定 |
+
+
