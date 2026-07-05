@@ -13,6 +13,7 @@ from backend.graph.project_state import ProjectState
 from backend.tools.file_tools import write_file
 from backend.tools.command_tools import run_command
 from backend.tools.llm_logging import timed_invoke
+from backend.skills.loader import load_skill_prompt
 
 load_dotenv()
 
@@ -26,7 +27,7 @@ TEST_SYSTEM_PROMPT = """你是一位专业的 Python 测试工程师。
 - 测试前用 fixture 初始化数据库，测试后清理
 - 只输出 Python 代码，用 ```python ... ``` 包裹
 - 不要 import 不存在的模块
-"""
+""" + "\n\n" + load_skill_prompt("test")
 
 
 def _extract_code(text: str) -> str:

@@ -31,6 +31,15 @@ try:
 except ImportError:
     pass
 
+try:
+    # 同样只在独立运行、项目根不在 sys.path 上时才会走 except 分支——
+    # 正常通过 workflow.py 调用时 backend 包必然可导入，_SPEC_SKILL 就是
+    # spec/SKILL.md 的正文，不会退化成空字符串
+    from backend.skills.loader import load_skill_prompt
+    _SPEC_SKILL = load_skill_prompt("spec")
+except ImportError:
+    _SPEC_SKILL = ""
+
 # 同时支持两种导入方式：
 #   - 作为模块被 B 导入: from backend.agents.commander.decompose import decompose
 #   - 直接运行: python decompose.py
@@ -100,7 +109,7 @@ def _try_structured_output(user_input: str, model: str) -> Optional[TaskDecompos
         # 拿不到 Token 数，记不了账（见 problem.md 第12条 Commander 记账缺失）
         structured_llm = llm.with_structured_output(TaskDecomposition, include_raw=True)
         raw_result = structured_llm.invoke(
-            f"{COMMANDER_SYSTEM_PROMPT}\n\n用户需求：{user_input}"
+            f"{COMMANDER_SYSTEM_PROMPT}\n\n{_SPEC_SKILL}\n\n用户需求：{user_input}"
         )
         parsed: Optional[TaskDecomposition] = raw_result.get("parsed")
         usage = getattr(raw_result.get("raw"), "usage_metadata", None) or {}
@@ -159,7 +168,7 @@ def decompose(user_input: str, model: str = None) -> TaskDecomposition:
         if structured is not None:
             return structured
 
-        full_prompt = f"{COMMANDER_SYSTEM_PROMPT}\n\n用户需求：{user_input}"
+        full_prompt = f"{COMMANDER_SYSTEM_PROMPT}\n\n{_SPEC_SKILL}\n\n用户需求：{user_input}"
 
         for attempt in range(3):
             start = time.time()

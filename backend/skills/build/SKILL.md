@@ -13,7 +13,10 @@ agents: [BackendExpert, FrontendExpert]
 ## 执行规则
 1. **先读接口规范**：从 ProjectState 读取 api_spec，不自己发明函数名
 2. **一次只写一个文件**：backend → db.py，frontend → app.py
-3. **代码必须可直接运行**：不留 TODO，不引入未在 requirements.txt 里的依赖
+3. **代码必须可直接运行**：不留 TODO，只用 Python 标准库，不引入任何第三方依赖——
+   `requirements.txt` 里的 `sqlalchemy`/`langgraph`/`fastapi` 等是这套软件工厂自己
+   运行需要的包，不代表生成的应用可以用，不要因为它们在 `requirements.txt` 里就
+   当作"允许使用的依赖列表"
 4. **用 ```python ``` 包裹输出**：方便解析器提取代码
 
 ## 输出格式

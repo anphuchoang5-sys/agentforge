@@ -58,7 +58,27 @@ Commander 生成的任何调度信息。
 - **实际情况**：全项目搜索，除了 `output_naming.py` 里一句注释提了一下文件名，
   没有任何代码在运行时读取/加载这些文件。各专家 Agent 的 System Prompt
   都是硬编码在对应 `.py` 文件里的字符串，跟 SKILL.md 毫无关联
-- **状态**：未修复，Skills 层目前只是静态文档，不是生效机制
+- **状态**：✅ 已修复（07-05）。新增 `backend/skills/loader.py`，提供
+  `load_skill_prompt(skill_name)`：读取指定 Skill 的 `SKILL.md`，去掉 YAML
+  frontmatter 后返回正文 Markdown（文件不存在时让 `FileNotFoundError` 原样
+  抛出，不静默兜底成空字符串）。采用"叠加"而不是"整段替换"的接入方式——
+  保留三个专家 Agent 现有的硬编码 `XXX_SYSTEM_PROMPT`（这部分已经调好、
+  含具体领域细节，比如"数据库文件名固定为 app.db"），把 SKILL.md 正文追加
+  在后面：`backend_expert.py`/`frontend_expert.py` 追加 `build` Skill，
+  `test_expert.py` 追加 `test` Skill，Commander 侧在 `decompose.py` 里追加
+  `spec` Skill（两处组装 prompt 的地方——`.with_structured_output()` 路径和
+  JSON 解析兜底路径——都统一加了，不是只改一处）。`decompose.py` 原本就有
+  "独立运行时 `backend` 包可能不在 `sys.path` 上"的兼容处理（`console_encoding`
+  那段），这次 Skill 加载沿用同样的 `try/except ImportError` 降级模式，
+  失败时退化成空字符串，不影响 Commander 原有功能。真实验证过：导入四个
+  模块后检查 `BACKEND_SYSTEM_PROMPT`/`FRONTEND_SYSTEM_PROMPT`/
+  `TEST_SYSTEM_PROMPT` 里确实包含对应 SKILL.md 的标题文字，`decompose.py`
+  的 `_SPEC_SKILL` 变量确认加载到 503 字符的 spec 正文，且 frontmatter
+  （`name: build` 这类字段）没有泄漏进最终 prompt。仍需说明的是：这只是
+  "把 SKILL.md 正文塞进 prompt"这一种最简单的接入方式，不是 CLAUDE.md
+  模块4 里设计的 L1/L2/L3 三层渐进式加载（没有"先看 description 做匹配"的
+  发现层，也没有"脚本/引用文件按需加载"的穿透层），`plan`/`review`/`ship`
+  三个 Skill 也还没接入代码（见第37条）
 
 ### 7. 完全没有记忆持久化
 - **在哪**：CLAUDE.md 设计了 mem0 + ChromaDB + LangGraph MemorySaver 三层记忆
@@ -455,6 +475,124 @@ Commander 生成的任何调度信息。
 - **状态**：未修复，两周演示项目里加一套完整测试可能来不及，但这是"为什么
   这么多小 bug 能一直不被发现"的系统性原因，值得在复盘/答辩时明确说清楚
 
+### 35. 三个专家 Agent 都只读同类型任务里的第一条，Commander 若给出多条同类型任务会被静默丢弃
+- **在哪**：`backend/agents/experts/test_expert.py` 第65-66行
+  `test_tasks[0].description`、`backend/agents/experts/backend_expert.py` 第64行
+  `backend_tasks[0].description`、`backend/agents/experts/frontend_expert.py`
+  第63行 `frontend_tasks[0].description`——三处写法完全一致
+- **实际情况**：`SubTask.type`（`backend/agents/commander/schemas.py` 第43行）
+  只是一个 `Literal["frontend", "backend", "test", "ui_validate"]`，Pydantic
+  层面完全没有约束"每种 type 只能出现一次"。三个专家节点都用
+  `[t for t in decomp.tasks if t.type == "xxx"][0]` 这种写法只取列表第一条，
+  如果 Commander 某次输出了 2 条 `type: "test"`（或 2 条 backend/frontend）的
+  任务——比如把"测试增删"和"测试边界情况"拆成两条子任务——第二条的
+  `description`（以及它对应的 `acceptance_criteria`）会被**静默丢弃**，不报错、
+  不警告，专家 Agent 只会看到并实现第一条任务描述的内容。等到 Validator
+  按 `acceptance_criteria` 逐条核对时，被丢弃那条任务的验收标准永远核对不到
+  对应实现，要么被判失败触发无意义的重试，要么验收标准本身写得宽松侥幸
+  蒙混过关
+- **为什么现在没暴露**：`commander_prompt.py` 第41行"最多拆成4个任务"+
+  第59-90行的示例固定给 4 个任务、每种 type 恰好一条，这是**约定俗成的隐性
+  假设**，没有一条规则明确写"每种 type 只能有一条"，纯粹靠 prompt 的示例
+  强引导 LLM 这么做，真正触发概率低但没有任何机制兜底
+- **状态**：未修复。修复方向不难——三处 `[0]` 改成遍历 `test_tasks`/
+  `backend_tasks`/`frontend_tasks`，把多条 `description` 拼接后再传给 LLM
+  prompt；但目前只是记录问题，尚未改动代码
+
+### 36. 后端/前端/测试三个专家 Agent 的产出模型是"恰好一个文件"，没有多文件/多模块扩展路径
+- **在哪**：`backend/agents/experts/backend_expert.py` 第90行
+  `write_file(f"{app_output_dir}/db.py", code)`、
+  `backend/agents/experts/frontend_expert.py` 第89行
+  `write_file(f"{app_output_dir}/app.py", code)`、
+  `backend/agents/experts/test_expert.py` 第95行
+  `write_file(f"{state['app_output_dir']}/test_app.py", test_code)`；三处的
+  `_extract_code()` 逻辑也完全一致，只从 LLM 回复里找**一个**
+  ```` ```python ... ``` ```` 代码块
+- **实际情况**：`BackendExpert` 不管应用的业务域是什么（todo/记账本/笔记...），
+  永远把生成的后端代码写到同一个固定文件名 `db.py`；`FrontendExpert` 永远写
+  `app.py`；`TestExpert` 永远写 `test_app.py`。`TestExpert` 的 system prompt
+  里"测试文件会和 db.py 放在同一个目录下运行"（第76行）这句话之所以能这么
+  写死，正是因为 `BackendExpert` 的输出路径本身就是写死的——两边是自洽的，
+  不是互相脱节的两个假设。但这意味着整套"软件工厂"的产出模型从设计上就是
+  **后端 = 恰好 1 个文件，前端 = 恰好 1 个文件，测试 = 恰好 1 个文件**，
+  没有 routes/models/services 这种分层，LLM 被要求把整个后端逻辑一次性塞进
+  单个文件的单次输出里
+- **为什么现在没暴露**：CLAUDE.md 的演示场景本身设计的就是"待办事项"这类
+  单文件 CRUD demo（`todo_db.py`/`todo_app.py`），需求足够简单，单文件足够
+  覆盖。一旦需求复杂到需要多个数据模型、需要接口分组，这套架构没有扩展
+  路径——不是"多文件支持暂时没做"，而是 prompt 设计和落盘逻辑的前提从根上
+  就是单文件，复杂需求下大概率会先撞上单次 LLM 输出长度上限和代码质量的
+  瓶颈，而不是被架构限制主动拒绝
+- **状态**：未修复，两周演示范围内（单一 demo 级应用）不构成问题，但这是
+  "软件工厂"这个定位与"单文件生成器"实际能力之间的落差，值得在复盘/答辩时
+  明确说清楚，不宜暗示系统能生成结构完整的多模块后端
+
+### 37. `plan`/`review`/`ship` 三个 SKILL.md 已补齐，但只是文档，还没接进代码
+- **在哪**：`backend/skills/plan/SKILL.md`、`backend/skills/review/SKILL.md`、
+  `backend/skills/ship/SKILL.md`（07-05 新增）
+- **实际情况**：CLAUDE.md"目录结构"一节原本设计的是 6 个 Skill
+  （`spec/plan/build/test/review/ship`），实际仓库长期只有 3 个
+  （`spec`/`build`/`test`），`plan`/`review`/`ship` 三个文件夹此前压根不存在。
+  这次补齐了这 3 个，内容分别对应 Commander 的任务分配步骤（`plan`）、
+  Validator 的验收审计（`review`）、`pipeline/run.py` 的打包交付逻辑（`ship`），
+  写法上跟已有的 `spec`/`build`/`test` 保持同样的 frontmatter + 执行规则/
+  质量检查点结构。但跟第6条修复的 `spec`/`build`/`test` 不同，这三个**目前
+  没有任何代码读取它们**——`loader.py` 的 `load_skill_prompt()` 函数虽然对
+  任意 skill 名通用，但没有任何地方调用 `load_skill_prompt("plan")`/
+  `load_skill_prompt("review")`/`load_skill_prompt("ship")`
+- **为什么先只补文档不接代码**：`ship` 尤其特殊——它对应的不是某个 LLM
+  Agent，而是 `pipeline/run.py` 里 `_zip_output()` 这段纯逻辑打包代码，
+  "追加进 System Prompt"这个接入方式对它不适用，需要单独设计（比如当成
+  代码审查 checklist 用，而不是塞进某个 LLM 调用）；`plan`同理更适合先确认
+  要不要和 `spec` 合并进 Commander 同一次 LLM 调用，还是拆成两次调用，
+  再决定怎么接
+- **状态**：未修复（只完成了"补文档"这一半），是否要接入、怎么接入见
+  "待决策事项"
+
+### 38. Skill 正文和硬编码 Prompt 拼在一起后，三处内容真实打架
+- **在哪**：`backend/skills/spec/SKILL.md`、`backend/skills/build/SKILL.md`、
+  `backend/skills/test/SKILL.md`——第6条把这三个 Skill 接入运行时之后，
+  实际把最终拼出来的完整 prompt 打印出来检查才发现的
+- **实际情况**：三处具体冲突
+  1. **Commander**：`commander_prompt.py` 要求输出完整的
+     `{app_name, api_spec, tasks, estimated_iterations}` JSON，但 `spec/SKILL.md`
+     紧跟在后面又给了一份"## 输出示例"，只有 `{"functions": {...}}`——连
+     `api_spec` 这层 key 都没有。同一个 prompt 里前后出现两份不兼容的
+     "该输出什么格式"，`.with_structured_output()` 主路径受 API 原生 schema
+     约束影响较小，但结构化输出失败后走的纯文本兜底路径
+     （`_parse_json_fallback` + `TaskDecomposition.model_validate()`）完全暴露
+     在这个风险下——模型学了 Skill 里那份精简示例，输出可能只有
+     `functions` 一层，`model_validate()` 因为缺 `tasks`（必填字段）直接校验
+     失败
+  2. **BackendExpert/FrontendExpert**：硬编码 prompt 说"只用标准库，不引入
+     额外依赖"，`build/SKILL.md` 规则3却说"不引入未在 requirements.txt 里的
+     依赖"——`requirements.txt` 里有 `sqlalchemy`/`langgraph`/`fastapi` 这些
+     工厂自己跑起来要用的包，字面上这条规则等于告诉模型"这些也能用"，跟前面
+     "只用标准库"直接矛盾
+  3. **TestExpert**：`test/SKILL.md` 规则2原文"测试必须真实运行：用
+     run_command 跑 pytest，把结果写进 test_results"——这句话描述的是
+     `test_expert_node` 这个 Python 函数自己在 LLM 回复之后做的事
+     （[test_expert.py:100](backend/agents/experts/test_expert.py:100)），
+     这次 `ChatOpenAI` 调用本身没有绑定任何工具，LLM 根本没有能力"调用
+     run_command"。把这句话原样塞进 system prompt 等于让模型执行一件它做不到
+     的事，有风险让它在回复里夹带"已运行测试"这类幻觉说明文字，反而违反
+     同一个 prompt 里"只输出 Python 代码"的硬性要求
+- **根因**：三份 SKILL.md 最初是作为独立静态文档写的，写的时候没有站在
+  "这段文字最终会跟另一份已经很完整的 prompt 拼在同一次 LLM 调用里"这个
+  角度考虑，各自的"输出示例"/"执行规则"都是按"这份文档自己独立成立"设计的
+- **状态**：✅ 已修复（07-05）。`spec/SKILL.md` 把独立的顶层 JSON 示例改写成
+  明确标注"只是 api_spec.functions 内部片段，不是完整输出"的片段示例；
+  `build/SKILL.md` 规则3改成跟硬编码 prompt 一致的"只用标准库，不引入任何
+  第三方依赖"，并注明 `requirements.txt` 是工厂自身依赖不是生成应用可用的
+  依赖列表；`test/SKILL.md` 规则2和质量检查点都改写成"外部流程会跑 pytest，
+  你要保证的是代码本身没有语法错误/import 不存在的模块"，不再要求 LLM
+  自己执行动作。真实重新拼过三份最终 prompt 检查过，确认冲突文字已经不再
+  同时出现
+- **给未来接入更多 Skill 的教训**：优先选/写只规定代码风格、质量检查点这类
+  "技术性建议"的 Skill，这类内容跟外层 prompt 天然不会冲突；一旦 Skill 里带有
+  自己的"输出格式/输出示例"，一定要跟外层调用方已有的格式要求交叉检查，
+  两边"两份格式说明"同时存在本身就是风险来源，不是"越详细越好"
+
 ---
 
 ## 待决策事项
@@ -462,8 +600,11 @@ Commander 生成的任何调度信息。
 - **要不要把动态调度真的做出来**：让 `workflow.py` 根据 `task_decomposition.tasks`
   和 `dependencies` 动态搭图，而不是写死固定流水线。工作量不小，两周工期内是否值得，
   还是接受现状、在文档里降低"动态编排"这个说法的承诺程度，说清楚现在是简化版
-- **Skills 层要不要真的接上**：让专家 Agent 的 System Prompt 从 SKILL.md 读取而不是硬编码，
-  还是干脆承认现在不需要这层抽象，把 SKILL.md 当纯文档留着就好
+- ~~Skills 层要不要真的接上~~（07-05 部分完成）：`spec`/`build`/`test` 已通过
+  `loader.py` 接入，采用"保留硬编码 Prompt + 追加 SKILL.md 正文"而不是"完全
+  从 SKILL.md 读取替换硬编码"，理由见第6条修复记录。剩下待决策的是
+  `plan`/`review`/`ship`（第37条）——`ship` 不对应 LLM Agent，`plan` 要不要
+  和 `spec` 合并成一次 Commander 调用，这两个还没定
 - ~~记忆层和 API 层谁先做~~：API 层已完成，记忆层仍是 Week2 选做，暂不处理
 - **`estimated_iterations` 要不要接进重试上限**：现在固定 5 轮硬顶。如果要让
   Commander 的估计值生效，得想清楚是"软目标+5轮硬顶不变"还是真的动态改上限——

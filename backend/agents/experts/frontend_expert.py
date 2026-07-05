@@ -13,6 +13,7 @@ from backend.graph.project_state import ProjectState
 from backend.tools.file_tools import write_file
 from backend.tools.llm_logging import timed_invoke
 from backend.agents.experts.output_naming import resolve_output_dir
+from backend.skills.loader import load_skill_prompt
 
 load_dotenv()
 
@@ -25,7 +26,7 @@ FRONTEND_SYSTEM_PROMPT = """你是一位专业的 Python 桌面 UI 工程师。
 - 界面要有：输入框、添加按钮、任务列表、删除按钮
 - 只输出 Python 代码，用 ```python ... ``` 包裹
 - 代码要能直接运行，if __name__ == '__main__': 启动主循环
-"""
+""" + "\n\n" + load_skill_prompt("build")
 
 
 def _extract_code(text: str) -> str:

@@ -12,6 +12,7 @@ from backend.graph.project_state import ProjectState
 from backend.tools.file_tools import write_file
 from backend.tools.llm_logging import timed_invoke
 from backend.agents.experts.output_naming import resolve_output_dir
+from backend.skills.loader import load_skill_prompt
 
 load_dotenv()
 
@@ -25,7 +26,7 @@ BACKEND_SYSTEM_PROMPT = """你是一位专业的 Python 后端工程师。
 - 严格按照给定的函数名和参数实现，不要改名
 - 只输出 Python 代码，用 ```python ... ``` 包裹
 - 代码要能直接运行，不留 TODO
-"""
+""" + "\n\n" + load_skill_prompt("build")
 
 
 def _extract_code(text: str) -> str:

@@ -35,8 +35,11 @@
 - **动态编排目前是假的**：Commander 生成的 `dependencies`/`estimated_iterations` 字段完整且格式正确，
   但 `workflow.py` 的执行图是写死的固定流水线（`decompose → backend/frontend → test → validator → 重试`），
   不读取也不响应这些字段。"AI 自主编排任务"目前更准确的说法是"AI 填一份好看的说明书，写死的剧本照演"（problem.md #1/#3）
-- **Skills 层（`skills/*/SKILL.md`）目前只是静态文档**：三个专家 Agent 的 System Prompt 都硬编码在
-  `.py` 文件里，运行时不加载、不解析任何 SKILL.md（problem.md #6）
+- **Skills 层已接入运行时，但只接了一半**：`backend/skills/loader.py` 会在运行时读取
+  `spec`/`build`/`test` 三个 SKILL.md 的正文，追加进 Commander/BackendExpert/FrontendExpert/
+  TestExpert 的 System Prompt（problem.md #6 已修复）；`plan`/`review`/`ship` 三个 SKILL.md
+  已按 CLAUDE.md 原定的 6 个补齐创建，但只是文档，还没接进 Commander/Validator/打包流程
+  （problem.md #37）
 - **记忆层（mem0 / ChromaDB / LangGraph MemorySaver）完全未实现**，不是"简化版"，是零。`graph.compile()`
   没传 `checkpointer`，`run()` 每次调用完全无状态，同一需求跑两次互不参考（problem.md #7/#18）。CLAUDE.md
   已把这层标为 Week2 选做，不算失职，但演示/汇报时应说清楚这一点
@@ -71,7 +74,7 @@
 | 工作项 | 具体内容 |
 |-------|---------|
 | 专家 Agent | 编写前端/后端专家 Agent 的 System Prompt（代码生成模板） |
-| Skills 集成 | 集成 google-gemini/agent-skills，调用对应 Skill 保证代码质量 —— **未做**，SKILL.md 目前是静态文档，未被运行时加载（problem.md #6） |
+| Skills 集成 | 集成 google-gemini/agent-skills，调用对应 Skill 保证代码质量 —— `spec`/`build`/`test` 已通过 [loader.py](backend/skills/loader.py) 在运行时读取并追加进对应 Agent 的 System Prompt（problem.md #6 已修复）；`plan`/`review`/`ship` 三个 SKILL.md 已补齐但尚未接入代码（problem.md #37） |
 | MCP Server | 搭建 MCP Server，暴露文件读写/命令执行工具 —— 已完成，但 `run_command`/`read_file`/`write_file` 尚无沙箱/目录穿越防护（problem.md #24/#25） |
 | 文件工具 | `write_file`、`read_file`（代码落盘、读取已有代码） |
 | 命令工具 | `run_command`（执行 pip install、python main.py 等） |
@@ -370,9 +373,12 @@ class SubTask(BaseModel):
 
 **职责**：为各专家 Agent 提供可复用、按需激活的标准化技能单元
 
-> **实现落差**：`skills/{build,test,spec}/SKILL.md` 目前只是静态文档，没有任何运行时代码加载/解析它们。
-> 各专家 Agent 的 System Prompt 是硬编码在对应 `.py` 文件里的字符串，跟 SKILL.md 毫无关联（problem.md #6）。
-> 下面的三层加载机制是设计参考，不是已实现行为。
+> **实现落差**：`backend/skills/{spec,build,test}/SKILL.md` 已通过 [loader.py](backend/skills/loader.py)
+> 在运行时被读取，正文追加进 Commander/BackendExpert/FrontendExpert/TestExpert 对应的 System Prompt
+> （problem.md #6 已修复）——但只是把整份 SKILL.md 正文原样拼接，不是下面这套 L1/L2/L3 渐进式加载
+> （没有"先只看 description 做匹配再决定要不要激活"的 L1 层，也没有"脚本/引用文件按需加载"的 L3 层，
+> 三份 SKILL.md 目前也不含 scripts/references 这些 L3 素材）。`plan`/`review`/`ship` 三个 SKILL.md
+> 已按下面的目录结构补齐创建（problem.md #37），但还没有代码读取它们，仍是纯文档。
 
 **设计参考**：google-gemini/agent-skills（18k+ Stars）— 三层渐进式加载机制
 
@@ -679,7 +685,7 @@ ollama serve  # 默认监听 localhost:11434
 | mem0 集成复杂 | 仍未引入，Week2 选做维持原状（problem.md #7） |
 | OpenClaw 是否适合桌面控制未验证 | 已决定不用，C 用 pywinauto 完整跑通主链路，OpenClaw 未接入 |
 | 两周时间紧 | 必做项基本完成，Docker 打包 + 演示录制未做（见"两周开发计划"Day 13/14） |
-| **动态编排/Skills 层/记忆层为静态占位**（新增） | 已在"现状速览"明确标注，不作为已实现能力对外宣传；是否补齐见"待决策事项" |
+| **动态编排/记忆层为静态占位，Skills 层部分接入**（新增） | Skills 层的 `spec`/`build`/`test` 已接进运行时（problem.md #6 已修复），`plan`/`review`/`ship` 仍是文档（problem.md #37）；动态编排、记忆层仍是全静态，已在"现状速览"明确标注，不作为已实现能力对外宣传 |
 | **MCP `run_command`/`read_file`/`write_file` 无沙箱防护**（新增） | 当前调用方均为写死路径/命令，主链路安全；扩大暴露范围前需补白名单/目录限制（problem.md #24/#25） |
 | **整套编排流水线代码零自动化测试**（新增） | 两周演示项目暂未覆盖，是过往几个 bug 长期未被发现的系统性原因（problem.md #34） |
 
