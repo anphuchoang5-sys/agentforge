@@ -93,7 +93,16 @@ Agent 的既定技术栈冲突，反而让它更难生成正确代码。
 1. type 必须是: backend / frontend / test / ui_validate 之一
 2. dependencies 为空数组表示无依赖
 3. test 依赖 backend（dependencies: ["task_1"]），ui_validate 依赖 frontend（dependencies: ["task_2"]）
-4. acceptance_criteria 每条要具体可验证
+4. acceptance_criteria 每条要具体可验证，且必须是下游 Validator 实际有能力核实的方式，只有这几种：
+   - pytest 测试整体通过/失败（有真实的 pass/fail 结果，但**没有覆盖率数字**——流水线里没有任何
+     工具会计算覆盖率百分比，不要写"覆盖率达到 XX%"这类标准，写了也永远不可能被判定通过，
+     因为压根没有数字可以拿来比较）
+   - 静态代码审查（读代码判断某个函数/逻辑是否存在、是否符合描述）
+   - ruff 静态检查 / 编译检查（语法正确、无未使用变量等）
+   - 桌面应用截图观察（界面上有哪些控件、显示了什么文字）
+   不要写"性能达到 XX"、"响应时间小于 XX ms"、"通过安全扫描"这类需要专门工具产出量化结果、
+   但这条流水线里没有对应工具的标准——这类标准不管代码质量多好都不可能被判定通过，只会让
+   重试机制在一个永远过不去的标准上空转
 5. app_name 必须是英文 snake_case，不超过20字符，体现核心业务实体
 6. 只输出 JSON，不要解释文字
 """

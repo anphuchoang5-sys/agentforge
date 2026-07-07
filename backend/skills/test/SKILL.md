@@ -17,6 +17,13 @@ agents: [TestExpert, UIValidator]
    不存在的模块，否则会在收集阶段就被判定生成失败
 3. **覆盖核心路径**：增删改查各至少一个测试用例
 4. **测试隔离**：每个测试用独立的临时数据库，不污染彼此
+5. **mock 外部 I/O 前先看被测代码怎么调用它**：如果 backend_code 里是
+   `with urllib.request.urlopen(...) as response:` 这种上下文管理器写法，你造的
+   假对象（如 `FakeResponse`）必须实现 `__enter__`/`__exit__`，不能只给
+   `read()`/`getcode()` 这类方法就假设够用——真实踩过的坑：假对象缺
+   `__enter__`/`__exit__`，测试跑起来直接 `TypeError: 'FakeResponse' object
+   does not support the context manager protocol`，而且这类问题在
+   collect-only 阶段完全测不出来，只有真正执行时才会暴露
 
 ## 输出格式
 ```python

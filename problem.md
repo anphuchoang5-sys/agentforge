@@ -327,7 +327,29 @@ Commander 生成的任何调度信息。
 - **状态**：未修复（评估后判定不是逻辑错误，是记账粒度的产品选择，不在"修
   bug/冗余/重复"范围内）
 
-### 46. `mcp_server.py` 暴露的三个 MCP 工具，主链路从未真正调用过——"Agent 自主用 MCP 工具"目前是空的
+### 52. Validator 的截图和桌面交互工具已经造好，但从未接入判断链路——"验收标准核对"实际是纯文本静态审查
+- **在哪**：`backend/agents/commander/llm_client.py:56-76`（`generate_with_metrics`）、
+  `backend/agents/validator/run.py:298-313`（`validate()` 第4/5步顺序）、
+  `backend/mcp_tools/desktop_control.py`（`ui_click`/`ui_input`/`ui_get_text` 定义处）
+- **实际情况**：
+  1. `llm_check()` 发给 DeepSeek 的请求体是 `"messages": [{"role": "user", "content": prompt}]`，
+     `content` 是纯字符串（代码文本 + 验收标准拼出来的 prompt），不是多模态 `image_url` 格式，
+     模型也不是视觉模型——这一步从头到尾只读代码文字，从没"看"过任何图片
+  2. `validate()` 里第4步"LLM 验收标准核对"先跑，第5步"桌面截图"后跑——LLM 做判断那一刻，
+     截图还没被拍出来，就算想用也用不到。截图存在的唯一作用是：①拍出来就算"启动成功"的
+     证据（拍不出来记一条失败项）；②传给前端展示区给人眼看。截图内容本身从没被任何程序或
+     模型比对过
+  3. `desktop_control.py` 里定义的 `ui_click`/`ui_input`/`ui_get_text`（能真正点按钮/填输入框/
+     读控件文字）全仓库搜索只有定义处和 `_selftest.py` 自测文件引用，`run.py::validate()`
+     里唯一调用的桌面操作是 `screenshot(window)`——从没有任何代码路径真的点一下"添加"按钮、
+     验证列表是不是真的多了一条
+- **后果**：四项检查里 `compile`/`ruff`/`pytest` 是真工具真数字，第四项"验收标准核对"对
+  `frontend`/`ui_validate` 类型的标准（比如"点击删除按钮后列表刷新"）本质是让 LLM 读源码里
+  有没有 `self.refresh_records()` 这行调用，去猜测行为是否正确，不是真的运行起来验证过。
+  跟 #4 是同一个技术缺口，但 #4 只说"没有对应节点"，容易让人以为截图至少提供了某种视觉
+  证据；这条把"截图和点击工具其实是摆设，没有接入任何判断逻辑"这个更容易被误解的细节
+  单独记录下来
+- **状态**：未修复。修复方向见"待决策事项"里新增的一条
 - **在哪**：`backend/mcp_tools/mcp_server.py` 全文件；对比
   `backend/agents/experts/backend_expert.py:12,91`、
   `backend/agents/experts/frontend_expert.py:13,90`、
@@ -374,3 +396,16 @@ Commander 生成的任何调度信息。
 - **`estimated_iterations` 要不要接进重试上限**：现在固定 5 轮硬顶。如果要让
   Commander 的估计值生效，得想清楚是"软目标+5轮硬顶不变"还是真的动态改上限——
   后者有被 AI 估计值带偏、失去安全网意义的风险，偏向前者但还没定
+- **#52 截图/交互工具没接入判断链路，要不要修、修到哪一步**：三个方案，复杂度递增，
+  互不冲突可以叠加：
+  1. **先把话说清楚（低成本，建议无论如何都做）**：把日志/prompt 里"核对验收标准"
+     这类措辞改成明确写"静态代码审查"，不让"通过"看起来像是"真的运行验证过"
+  2. **让截图至少参与判断（中等成本，前提是 DeepSeek 有视觉模型可用，需要先确认）**：
+     调换 `validate()` 里第4/5步顺序（截图先跑），`frontend`/`ui_validate` 类型的标准
+     核对时把截图一起传给模型（多模态 content block），至少能抓"窗口空白/布局崩掉"
+     这类纯读代码抓不出来的问题，但仍然验证不了真实点击行为
+  3. **真正把 `ui_click`/`ui_input` 接进判断链路（高成本，就是 #4 里说的 UIValidator
+     Agent）**：需要 FrontendExpert 额外产出一份"界面元素清单"（比如"输入框叫
+     title_entry，按钮叫 add_button，列表叫 task_tree"）之类的结构化描述，
+     Validator 才能通用地知道该点哪个控件、验证什么结果，不是从代码猜。这是
+     CLAUDE.md 原本设想但一直没做出来的部分，工作量不小
