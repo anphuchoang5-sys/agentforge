@@ -25,12 +25,18 @@ def load_skill_prompt(skill_name: str) -> str:
     path = os.path.join(_SKILLS_DIR, skill_name, "SKILL.md")
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
-    return _strip_frontmatter(text).strip()
+    return _strip_frontmatter(text, path).strip()
 
 
-def _strip_frontmatter(text: str) -> str:
+def _strip_frontmatter(text: str, path: str) -> str:
     """去掉 SKILL.md 开头的 --- ... --- YAML frontmatter，只留正文 Markdown"""
     if not text.startswith("---"):
         return text
-    end = text.index("\n---", 3)
+    try:
+        end = text.index("\n---", 3)
+    except ValueError:
+        # 只声明了开头的 ---，没有闭合——docstring 承诺"文件不存在时
+        # FileNotFoundError 原样抛出"，这里给同样明确、但不同原因的报错，
+        # 不能让它以 str.index 的原始 "substring not found" 形式泄漏出去
+        raise ValueError(f"SKILL.md frontmatter 未闭合，找不到结尾的 '---'：{path}")
     return text[end + 4:]

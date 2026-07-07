@@ -24,9 +24,43 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from backend.api.event_translator import EventTranslator
+from backend.api.schemas import (
+    DoneEvent,
+    ErrorEvent,
+    LogEvent,
+    NodeStatusEvent,
+    ProgressEvent,
+    ValidatorResultEvent,
+)
 from backend.pipeline.run import run
 
 END_SENTINEL = {"type": "__end__"}
+
+# type 字段 → 对应的 schemas.py 校验模型。之前这几个模型定义了但零引用
+# （event_translator.py/task_manager.py 全部手写裸 dict 直接 send_json，
+# NodeStatusEvent.id 的 Literal 约束形同虚设），这里在唯一的推送出口校验一遍
+# ——violent 分支要求内部契约错误必须明确暴露，不能打印警告后继续推送坏事件。
+_EVENT_SCHEMAS = {
+    "log": LogEvent,
+    "node_status": NodeStatusEvent,
+    "progress": ProgressEvent,
+    "done": DoneEvent,
+    "error": ErrorEvent,
+}
+
+
+def _check_event_shape(event: dict) -> None:
+    schema = _EVENT_SCHEMAS.get(event.get("type"))
+    if schema is None and "type" not in event and "passed" in event:
+        schema = ValidatorResultEvent  # 无 type 字段的扁平 Validator 结果
+    if schema is None:
+        return
+    try:
+        schema.model_validate(event)
+    except Exception as e:
+        raise RuntimeError(
+            f"WebSocket 事件不符合 schemas.py 约定: {event.get('type')} - {e}"
+        ) from e
 
 
 @dataclass
@@ -80,6 +114,8 @@ async def run_pipeline_in_background(task: Task) -> None:
     translator = EventTranslator()
 
     def push(event: dict) -> None:
+        _check_event_shape(event)
+
         def _record_and_broadcast() -> None:
             task.history.append(event)
             for q in list(task.subscribers):

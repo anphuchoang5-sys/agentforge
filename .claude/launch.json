@@ -7,6 +7,18 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "frontend",
       "port": 5173
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "E:\\6.29agent\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "backend.api.main:app", "--port", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "validator",
+      "runtimeExecutable": "E:\\6.29agent\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "backend.agents.validator.server:app", "--host", "127.0.0.1", "--port", "8901"],
+      "port": 8901
     }
   ]
 }

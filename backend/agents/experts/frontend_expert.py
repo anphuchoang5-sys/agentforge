@@ -30,15 +30,30 @@ FRONTEND_SYSTEM_PROMPT = """你是一位专业的 Python 桌面 UI 工程师。
 
 
 def _extract_code(text: str) -> str:
+    if not text or not text.strip():
+        raise RuntimeError("FrontendExpert 没有返回任何内容")
     if "```python" in text:
         start = text.index("```python") + 9
         end = text.index("```", start)
-        return text[start:end].strip()
+        code = text[start:end].strip()
+        if not code:
+            raise RuntimeError("FrontendExpert 返回了空 Python 代码块")
+        return code
     if "```" in text:
         start = text.index("```") + 3
         end = text.index("```", start)
-        return text[start:end].strip()
-    return text.strip()
+        code = text[start:end].strip()
+        if not code:
+            raise RuntimeError("FrontendExpert 返回了空代码块")
+        return code
+    raise RuntimeError("FrontendExpert 未按约定返回 ```python ... ``` 代码块")
+
+
+def _assert_tkinter_app(code: str) -> None:
+    if "import tkinter" not in code and "from tkinter" not in code:
+        raise RuntimeError("FrontendExpert 生成的代码不像 Tkinter 应用：缺少 tkinter import")
+    if "mainloop(" not in code:
+        raise RuntimeError("FrontendExpert 生成的代码缺少 mainloop()，不能证明 UI 会启动")
 
 
 def frontend_expert_node(state: ProjectState) -> dict:
@@ -70,9 +85,13 @@ def frontend_expert_node(state: ProjectState) -> dict:
 
 请实现完整的 Tkinter 桌面应用代码。"""
 
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise RuntimeError("FrontendExpert 缺少 DEEPSEEK_API_KEY，无法真实生成代码")
+
     llm = ChatOpenAI(
         model=os.getenv("EXPERT_MODEL", "deepseek-v4-pro"),
-        api_key=os.getenv("DEEPSEEK_API_KEY"),
+        api_key=api_key,
         base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
         temperature=0.2,
     )
@@ -87,6 +106,7 @@ def frontend_expert_node(state: ProjectState) -> dict:
     )
 
     code = _extract_code(response.content)
+    _assert_tkinter_app(code)
     path = write_file(f"{app_output_dir}/app.py", code)
 
     print(f"[FrontendExpert] 完成，代码已写入 {path}")

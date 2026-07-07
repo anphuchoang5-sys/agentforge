@@ -15,6 +15,6 @@ commander — 同学A：需求理解与拆解模块
 """
 
 from .decompose import decompose
-from .ollama_client import health_check
+from .llm_client import health_check
 
 __all__ = ["decompose", "health_check"]

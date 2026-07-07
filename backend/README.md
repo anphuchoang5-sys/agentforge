@@ -39,13 +39,11 @@ backend/
 │   │                             读取 backend_code → 生成 pytest 测试
 │   │                             真实运行 pytest，结果写入白板
 │   │
-│   └── validator_stub.py       ★ C 的接口桩（临时）
+│   └── validator_stub.py       ★ C 的验证接口适配器
 │                                 validate(app_path, test_results) -> dict
-│                                 是同学 C 真正要实现的函数（对应接口③），
-│                                 现在这里放的是占位 Mock：文件存在 + 测试无
-│                                 FAILED = 通过；.env 加 VALIDATOR_URL 后
-│                                 自动切换为真实调用，调用方（validator_node）
-│                                 不用改一行代码
+│                                 只允许调用真实 Validator：VALIDATOR_URL 存在
+│                                 时走 HTTP，否则直接 import C 的 validate()
+│                                 任一路径失败都明确报错，不再 Mock/降级
 │
 ├── tools/                      【同学 B 负责】
 │   ├── file_tools.py           ★ write_file / read_file
@@ -99,7 +97,7 @@ graph/workflow.py        ← LangGraph 状态机启动
   │
   ▼
 graph/workflow.py:validator_node       调用 agents/validator_stub.py 的 validate()
-  │  validate() 是 C 要实现的函数（对应最终分工表接口③），现在是占位 Mock
+  │  validate() 必须调用真实 Validator；不可用时直接报错
   │  passed? → 打包 zip 返回
   │  failed? → 重试，最多 5 次
   ▼
@@ -130,7 +128,7 @@ result = run("做一个待办事项桌面应用")
 # }
 ```
 
-**等 C 上线后，只需在 `.env` 加一行：**
+**如果 C 以独立 HTTP 服务运行，在 `.env` 加一行：**
 ```
 VALIDATOR_URL=http://C的服务地址:端口
 ```
@@ -139,7 +137,7 @@ VALIDATOR_URL=http://C的服务地址:端口
 
 ```python
 # backend/agents/validator_stub.py::validate()
-# C 上线后，B 内部会这样调用（见 validator_url 分支）：
+# B 内部会这样调用（见 validator_url 分支）：
 requests.post(f"{VALIDATOR_URL}/validate", json={"app_path": app_path})
 # 输入：{"app_path": "./output/todo/app.py"}
 # 期望 C 返回：
@@ -151,7 +149,7 @@ requests.post(f"{VALIDATOR_URL}/validate", json={"app_path": app_path})
 # }
 ```
 
-C 上线前，`validate()` 走本地 Mock，返回结构与上面完全一致（`screenshot` 暂时为 `None`），保证 C 接进来那天，`validator_node`（[graph/workflow.py](graph/workflow.py)）不用改一行代码。
+violent 分支不再保留本地 Mock：C 的模块导入失败、HTTP 服务失败、返回格式错误都必须暴露为真实错误。
 
 ---
 
@@ -161,6 +159,6 @@ C 上线前，`validate()` 走本地 Mock，返回结构与上面完全一致（
 |------|------|
 | BackendExpert → TestExpert（顺序）| TestExpert 需要读 backend_code，不能并行 |
 | Frontend ‖ Backend（并行）| 两者都读接口规范，不需要等对方 |
-| validator_stub 用 Mock | C 还没写好，B 不能卡死等她，.env 切换零改动 |
+| validator_stub 只做真实调用适配 | C 不可用就是系统错误，不能用 Mock 假装验证通过 |
 | 重试最多 5 次 | 防止 AI 生成死循环，超限转人工 |
 | MCP Server 独立进程 | 工具与 Agent 解耦，其他人不用 import 我们的代码 |

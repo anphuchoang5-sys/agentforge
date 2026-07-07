@@ -38,10 +38,10 @@
 - **Skills 层已接入运行时，但只接了一半**：`backend/skills/loader.py` 会在运行时读取
   `spec`/`build`/`test` 三个 SKILL.md 的正文，追加进 Commander/BackendExpert/FrontendExpert/
   TestExpert 的 System Prompt（problem.md #6 已修复）；`plan`/`review`/`ship` 三个 SKILL.md
-  已按 CLAUDE.md 原定的 6 个补齐创建，但只是文档，还没接进 Commander/Validator/打包流程
+  已按 AGENTS.md 原定的 6 个补齐创建，但只是文档，还没接进 Commander/Validator/打包流程
   （problem.md #37）
 - **记忆层（mem0 / ChromaDB / LangGraph MemorySaver）完全未实现**，不是"简化版"，是零。`graph.compile()`
-  没传 `checkpointer`，`run()` 每次调用完全无状态，同一需求跑两次互不参考（problem.md #7/#18）。CLAUDE.md
+  没传 `checkpointer`，`run()` 每次调用完全无状态，同一需求跑两次互不参考（problem.md #7/#18）。AGENTS.md
   已把这层标为 Week2 选做，不算失职，但演示/汇报时应说清楚这一点
 - **重试闭环只会回头改 BackendExpert**：失败后的条件边只指向 `"backend_expert"`，`FrontendExpert` 只在
   第一轮跑一次；如果 Validator 判定失败的原因出在前端，剩余重试轮次全部在修一个跟问题无关的地方
@@ -107,7 +107,7 @@ A  ──接口1──►  B  ──接口3──►  C
 ```
 
 - B 依赖 A（任务清单）、B 调用 C（提交代码路径，拿测试报告）
-- D 无依赖；violent 分支只允许接真实接口，旧 Mock 演示路径不得作为运行链路
+- D 无依赖，用 Mock 数据独立开发，最后接真实接口
 - **B 不依赖 D**，反向无依赖
 
 ---
@@ -120,19 +120,6 @@ A  ──接口1──►  B  ──接口3──►  C
 硬编码兜底会让调用方误以为成功，导致下游模块用错误数据继续运行，问题难以排查。
 正确做法：`raise RuntimeError("具体原因 + 修复建议")`。
 
-### violent 分支：严格失败原则（禁止 Mock / 兜底 / 降级）
-
-本分支执行更强的 fail-fast 规则：**明确的问题必须明确报错**，不能通过 Mock、
-静默跳过、降级模型、空数据占位、假成功报告来维持演示表面完整。
-
-- Agent 没有真实生成代码、没有生成测试、没有生成 pytest JSON 报告，必须抛错或返回阻断性失败项
-- Validator 缺依赖、缺验收标准、LLM 不可用、LLM 返回不可解析、截图/Playwright/pywinauto 未真实执行成功，不能视为通过
-- 后端事件/回调缺少关键字段时必须报错，不能继续推送形状错误或信息不完整的事件
-- DeepSeek/Ollama、structured-output/JSON fallback、真实后端/Mock 前端之间不得自动降级；需要换实现必须显式配置、显式说明
-- 前端不得用 Mock 数据、静态 Token 柱子、吞掉接口错误的方式假装后端正常
-
-这条规则优先级高于早期文档里所有“兜底”“Mock”“跳过后返回通过”“离线降级”的说法。
-
 ### 接口优先设计（API-First）
 
 Commander 第一步生成接口规范（函数名/参数/返回值），存入 ProjectState，BackendExpert 和 FrontendExpert 同时读取规范并行开发，不需要等对方完成。
@@ -144,7 +131,7 @@ Commander 第一步生成接口规范（函数名/参数/返回值），存入 P
 
 输出**目录名**（即应用名）不再由开发者硬编码，也不是靠 B 事后从函数名反推——`TaskDecomposition` 加了 `app_name: Optional[str]` 字段（[schemas.py](backend/agents/commander/schemas.py)），Commander 在理解需求的同时直接给出英文 snake_case 的应用名（[commander_prompt.py](backend/agents/commander/commander_prompt.py) 第1步 + 输出格式 + 规则5），比下游猜词更准，因为它本来就懂用户在说什么。
 
-解析逻辑（优先 `decomp.app_name`，经 `_sanitize_app_name` 清理；拿不到就退回 `_derive_app_name` 从 `api_spec.functions` 反推；两级都拿不到则明确报错，不再兜底 `generated_app`）放在 [output_naming.py](backend/agents/experts/output_naming.py) 的 `resolve_output_dir(base_dir, decomp)`，**不放在 `decompose_node` 里**：决定"代码写到哪个文件夹"是执行层（怎么落盘）的关注点，`decompose_node` 只做"调用 A 的 decompose，把结果写进白板"这一件事，不掺杂输出目录逻辑。
+解析逻辑（优先 `decomp.app_name`，经 `_sanitize_app_name` 清理；拿不到就退回 `_derive_app_name` 从 `api_spec.functions` 反推；两级都拿不到兜底 `generated_app`）放在 [output_naming.py](backend/agents/experts/output_naming.py) 的 `resolve_output_dir(base_dir, decomp)`，**不放在 `decompose_node` 里**：决定"代码写到哪个文件夹"是执行层（怎么落盘）的关注点，`decompose_node` 只做"调用 A 的 decompose，把结果写进白板"这一件事，不掺杂输出目录逻辑。
 
 实际调用方是专家池：`backend_expert_node`（[backend_expert.py](backend/agents/experts/backend_expert.py)）在 BackendExpert → TestExpert 顺序依赖链的起点解析一次，写回 `state["app_output_dir"]`，TestExpert 直接读；`frontend_expert_node` 与 BackendExpert 并行执行，独立调用 `resolve_output_dir` 算一遍（`resolve_output_dir` 是纯函数，同样的 `task_decomposition` 输入必然算出同样的目录，两边算的结果天然一致），但**不**把结果写回 `state["app_output_dir"]`——两个并行节点同时写同一个 state key 会在 LangGraph 里冲突。`ProjectState` 相应拆成 `output_base_dir`（`run()` 传入的基准目录，全流程不变）+ `app_output_dir`（解析后的真实目录，会被 BackendExpert 覆盖）两个字段，重试时 BackendExpert 重新执行也是从不变的 `output_base_dir` 算起，不会把路径越叠越深（如 `./output/todo/todo`）。
 
@@ -158,25 +145,11 @@ Commander 第一步生成接口规范（函数名/参数/返回值），存入 P
 
 这个同步行为目前是 LangGraph 自己承认的未修复 bug（[langchain-ai/langgraph#6320](https://github.com/langchain-ai/langgraph/issues/6320)，2025-10-21 提交，confirmed bug，未修复），不是文档承诺的稳定契约，`workflow.py` 里对应位置留了详细注释。就算未来升级 LangGraph 后这个行为被"修复"，`validator_node` 用的是 `state.get("frontend_path", "")` 安全读取，最坏情况是那一轮验证失败触发重试，不会崩溃或产生脏数据。
 
-`app_name` 定义成 `Optional`（默认 `None`）是为了向后兼容旧 schema；但在 violent 分支里，如果 Commander 没给 `app_name` 且无法从 `api_spec.functions` 推出业务名，执行层必须报错，不能静默写到通用目录。
-
-### 委派 Codex 处理代码修改的规范
-
-给 Codex（`codex:codex-rescue` 或相关 `codex:*` skill）的任务简报必须包含以下五项，缺一不可：
-
-1. **修改范围**：具体要改哪几个文件、哪几个函数；同样重要的是明确写出哪些文件/模块/逻辑**明确不许碰**
-2. **修改目标**：要解决的具体问题是什么、为什么要改（不是"让这块更严格/更健壮"这种抽象方向，是具体问题）
-3. **具体修改措施**：每个文件具体怎么改，给出代码片段/伪代码，不要留给 Codex 自由发挥
-4. **Codex 自验证方法**：要求 Codex 改完之后自己跑一遍验证（编译检查/构造场景真实调用一次/贴出真实运行结果），验证通过才算交付
-5. **验收标准**：写清楚人类复核时具体要确认什么
-
-调用方式上还有一条硬约束：**同一个任务只能调用一次相关 skill**。哪怕第一次给的参数很简短、看起来像是"预热"或"占位"，实际上已经是一次真实派发的后台任务——不是可以被后续更完整调用安全覆盖的东西。曾经先用简短参数调用一次、又立刻用完整版任务简报调用第二次，导致两个 Codex 执行并发修改同一批文件、互相交错覆盖，`git diff` 完全没法干净地分清是谁改的。
-
-即使简报写全了五项，Codex 仍然可能越界（真实发生过：明确写了"不要改前端 TypeScript 代码"，Codex 还是往 `frontend/src/store/appStore.ts` 和 `App.tsx` 加了字段和 UI；还留过一段没人用的死代码）。所以交付后的人工复核不能省，且复核要用 `Read` 直接读取改动文件的**当前**内容配合真实调用验证，不能只信 `git diff`——如果仓库本来就有大量未提交的历史改动，`git diff` 的输出会被无关内容淹没，看不清 Codex 这一轮到底新加了什么。
+`app_name` 定义成 `Optional`（默认 `None`）是为了向后兼容——即使 Commander 某次没给出这个字段，`TaskDecomposition` 依然能正常构造，`resolve_output_dir` 自动降级到派生逻辑，不会因为 Commander 的输出不完整就整体报错。
 
 ### AI 模型策略
 
-**主力用云端 API**（DeepSeek-V3 / Claude Haiku / DeepSeek-Coder），本项目需要联网。violent 分支不做自动模型降级；Ollama 只有在显式配置为目标模型时才允许使用。
+**主力用云端 API**（DeepSeek-V3 / Codex Haiku / DeepSeek-Coder），本项目需要联网。Ollama 仅作离线兜底。
 
 | Agent | 推荐模型 | 理由 |
 |-------|---------|------|
@@ -195,7 +168,7 @@ Commander 第一步生成接口规范（函数名/参数/返回值），存入 P
 | **Microsoft Agent Framework 1.0+** | 命名模糊（可能是 AutoGen 0.4+ 或 Semantic Kernel），API 频繁变动，文档不稳定 | **LangGraph** | 生产级状态机，有向图 + 条件边，MemorySaver 断点续跑，生态最成熟 |
 | **CAMEL** | 学术框架，无生产级工作流控制，无条件边/循环保护机制 | **LangGraph** | 同上，CAMEL 仅适合研究复现 |
 | **Dapr**（可选） | 引入分布式基础设施，2 周配置成本过高 | **asyncio.Queue** | 单机项目不需要分布式消息队列 |
-| ~~OpenClaw~~（已勘误，见下方说明） | ~~曾误判为幻觉项目~~ | 保留 OpenClaw，C 评估后决定是否搭配 pywinauto/Playwright | OpenClaw（openclaw/openclaw）真实存在，2026年1月底发布后涨星速度是 GitHub 史上最快之一。是否用它做桌面控制，取决于 C 实测 `windows-ui-automation` skill 是否走 Windows UI Automation COM API（类似 pywinauto 的 uia backend，不依赖坐标），还是走坐标/图像识别（类似 PyAutoGUI，CLAUDE.md 明确要避免的模式）；另外 OpenClaw 本身是一整套独立 Agent 运行时，接入成本比直接 import pywinauto 这个 Python 库更高，需要一并评估 |
+| ~~OpenClaw~~（已勘误，见下方说明） | ~~曾误判为幻觉项目~~ | 保留 OpenClaw，C 评估后决定是否搭配 pywinauto/Playwright | OpenClaw（openclaw/openclaw）真实存在，2026年1月底发布后涨星速度是 GitHub 史上最快之一。是否用它做桌面控制，取决于 C 实测 `windows-ui-automation` skill 是否走 Windows UI Automation COM API（类似 pywinauto 的 uia backend，不依赖坐标），还是走坐标/图像识别（类似 PyAutoGUI，AGENTS.md 明确要避免的模式）；另外 OpenClaw 本身是一整套独立 Agent 运行时，接入成本比直接 import pywinauto 这个 Python 库更高，需要一并评估 |
 | **Qdrant / Milvus** | Milvus 部署复杂（需独立服务），演示项目过重 | **ChromaDB** | 纯 Python，零配置，本地文件运行，演示够用 |
 | **agent-skills（Gemini）** | 无法直接 pip install，需手动集成 Skill 机制 | 参考其 SKILL.md 结构 **自研 Skill 层** | 三层渐进式加载机制是核心设计思路，值得借鉴 |
 | **裸 SQLite 记忆** | 无向量检索，跨会话召回困难 | **mem0ai/mem0** | 专为 Agent 记忆设计，底层用 SQLite，自动向量化 |
@@ -482,7 +455,7 @@ Commander → [FrontendExpert] → Validator
 
 > **实现落差**：全项目搜索 `checkpointer`/`MemorySaver`/`chromadb`/`mem0` 零命中，`graph.compile()` 未传
 > `checkpointer`。这不是"简化版记忆"，是完全没有——同一需求跑两次会得到两份互不参考的独立代码
-> （problem.md #7/#18）。CLAUDE.md 已标为 Week2 选做，不算失职，但对外介绍时不应暗示系统有跨会话学习能力。
+> （problem.md #7/#18）。AGENTS.md 已标为 Week2 选做，不算失职，但对外介绍时不应暗示系统有跨会话学习能力。
 
 | 子模块 | 选型 | GitHub | Stars | 说明 |
 |--------|------|--------|-------|------|
@@ -521,7 +494,7 @@ agent = create_react_agent(llm, tools)
 | 代码生成（Expert Agent） | **qwen2.5-coder:7b** | 6GB | 中文友好，代码能力强 |
 | 任务规划（Commander） | **qwen2.5:14b** | 10GB | 推理能力强，拆解任务更准确 |
 | 显存不足备选 | **qwen2.5-coder:3b** | 3GB | 质量下降但可运行 |
-| API 补充（可选） | Claude claude-haiku-4-5 via Anthropic | — | Commander 用云 API，加速规划 |
+| API 补充（可选） | Codex Codex-haiku-4-5 via Anthropic | — | Commander 用云 API，加速规划 |
 
 ```bash
 ollama pull qwen2.5-coder:7b
@@ -586,7 +559,7 @@ ollama serve  # 默认监听 localhost:11434
 
 ### Week 1 — 核心骨架（必做）✅ 全部完成
 
-> 实际执行时用云端 DeepSeek API 作主力（见"AI 模型策略"），violent 分支不再自动降级到 Ollama，
+> 实际执行时用云端 DeepSeek API 作主力（见"AI 模型策略"），Ollama 降级为离线兜底，
 > 与本表 Day 1 原计划的"纯 Ollama"不同，其余产出均已达成。
 
 | 天数 | 任务 | 产出 | 状态 |
@@ -696,7 +669,7 @@ ollama serve  # 默认监听 localhost:11434
 │   └── todo_app_demo.py        # 演示场景脚本
 ├── tests/
 │   └── test_agents.py          # Agent 集成测试
-└── CLAUDE.md
+└── AGENTS.md
 ```
 
 ---
@@ -705,7 +678,7 @@ ollama serve  # 默认监听 localhost:11434
 
 | 风险 | 对策 |
 |------|------|
-| 本地 LLM 推理慢（7B 约 10-30s/次） | 已切换云端 DeepSeek API 为主力；violent 分支不自动降级到本地 LLM，缺少云端配置时明确报错 |
+| 本地 LLM 推理慢（7B 约 10-30s/次） | 已切换云端 DeepSeek API 为主力，Ollama 仅离线兜底，问题已不复存在 |
 | Agent 无限循环 | `state["iteration_count"]` 计数，超 5 轮强制终止；但计数逻辑实际是"第一次+4次重试"，比文档少一轮（problem.md #21） |
 | 桌面自动化不稳定 | C 的真实 Validator 已用 pywinauto 跑通主链路 |
 | LangGraph 学习曲线 | 已跑通，StateGraph 主链路稳定运行 |

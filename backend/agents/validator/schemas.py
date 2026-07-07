@@ -14,13 +14,17 @@ schemas.py — 验证者 Agent 数据模型（对齐对外接口）
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 
 class FailedTest(BaseModel):
     """单条失败项（结构化，供 D 展示 + B 的 fix_expert 读取）"""
     name: str = Field(description="失败项标识，如 'test_delete_todo' / 'ruff:F401' / 'compile'")
     reason: str = Field(description="失败原因说明")
+    task_type: Optional[Literal["frontend", "backend", "test", "ui_validate"]] = Field(
+        default=None,
+        description="失败标准归属的任务类型；非 acceptance_criteria 比对产生的失败项（如 compile/ruff/pytest）为 None",
+    )
     severity: Literal["error", "warning"] = Field(
         default="error",
         description="error=阻断（failed），warning=仅提示（不阻断 passed）",
@@ -51,12 +55,3 @@ class TestReport(BaseModel):
     app_type: str = Field(default="", description="应用类型：desktop / web / unknown")
     iteration: int = Field(default=0, description="当前修复轮次（由 B 传入）")
 
-
-# ===== 兜底报告（截图失败 / 异常时用，保证 B 拿得到结构化结果） =====
-
-PASS_REPORT_TEMPLATE = TestReport(
-    passed=True,
-    logs=["[兜底] 验证器未执行，返回通过占位"],
-    screenshot="",
-    failed_tests=[],
-)

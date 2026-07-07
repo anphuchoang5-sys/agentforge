@@ -6,7 +6,7 @@ checkers.py — 验证者四项检查实现
     ① compile_check  — 编译检查（py_compile，能否 import）
     ② ruff_check     — ruff 静态检查（语法/未使用变量等）
     ③ pytest_check   — 读取 TestExpert 的 pytest 结果（桩，等 B 接入）
-    ④ llm_check      — LLM 逐条核对验收标准（已接入 A 的 ollama_client）
+    ④ llm_check      — LLM 逐条核对验收标准（已接入 A 的 llm_client）
 
 每项返回统一格式: (passed, logs, failed_tests)
     passed: bool        — 该项是否通过（warning 不算失败）
@@ -16,19 +16,33 @@ checkers.py — 验证者四项检查实现
 
 import json
 import subprocess
+import sys
 import py_compile
 import time
 from pathlib import Path
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 # 双导入（对齐 A 的 decompose.py 风格）
 try:
     from .schemas import FailedTest
-except ImportError:
+except ImportError as exc:
+    if "attempted relative import" not in str(exc):
+        raise
     from schemas import FailedTest
 
 
 # ===== ① 编译检查 =====
+
+def _missing_path_failure(
+    check_name: str,
+    app_path: str,
+) -> Tuple[bool, List[str], List[FailedTest]]:
+    msg = "应用路径不能为空" if not app_path or not str(app_path).strip() else f"应用文件不存在: {app_path}"
+    return (
+        False,
+        [f"[{check_name}] ❌ {msg}"],
+        [FailedTest(name=check_name, reason=msg, severity="error")],
+    )
 
 def compile_check(app_path: str) -> Tuple[bool, List[str], List[FailedTest]]:
     """编译检查：python 能否正常编译 app_path（语法层面）
@@ -38,11 +52,8 @@ def compile_check(app_path: str) -> Tuple[bool, List[str], List[FailedTest]]:
     logs = []
     failed: List[FailedTest] = []
 
-    if not Path(app_path).exists():
-        msg = f"应用文件不存在: {app_path}"
-        logs.append(f"[compile] ❌ {msg}")
-        failed.append(FailedTest(name="compile", reason=msg, severity="error"))
-        return False, logs, failed
+    if not app_path or not str(app_path).strip() or not Path(app_path).exists():
+        return _missing_path_failure("compile", app_path)
 
     logs.append(f"[compile] 检查文件: {app_path}")
     try:
@@ -75,15 +86,18 @@ def ruff_check(app_path: str) -> Tuple[bool, List[str], List[FailedTest]]:
     logs = []
     failed: List[FailedTest] = []
 
-    if not Path(app_path).exists():
-        logs.append("[ruff] ⏭️ 跳过（文件不存在）")
-        return True, logs, failed  # 文件不存在不在此处报，compile_check 已报
+    if not app_path or not str(app_path).strip() or not Path(app_path).exists():
+        return _missing_path_failure("ruff", app_path)
 
     # 判断是单文件还是目录
     target = Path(app_path)
     ruff_target = str(target.parent) if target.is_file() else str(target)
 
-    cmd = ["ruff", "check", "--config", _RUFF_CONFIG, "--output-format=json", ruff_target]
+    # 用 python -m ruff 而不是裸 "ruff" 命令——跟项目里调 pytest 用
+    # python -m pytest 是一个道理，不依赖 ruff.exe 所在目录有没有被加进
+    # PATH（pip 装到用户目录时这个目录经常不在 PATH 里，会导致
+    # FileNotFoundError，被误判成"没装"，其实包本身装了）
+    cmd = [sys.executable, "-m", "ruff", "check", "--config", _RUFF_CONFIG, "--output-format=json", ruff_target]
     logs.append(f"[ruff] 执行: {' '.join(cmd)}")
 
     try:
@@ -92,21 +106,33 @@ def ruff_check(app_path: str) -> Tuple[bool, List[str], List[FailedTest]]:
         )
     except FileNotFoundError:
         msg = "ruff 未安装（pip install ruff）"
-        logs.append(f"[ruff] ⚠️ {msg}")
-        failed.append(FailedTest(name="ruff", reason=msg, severity="warning"))
-        return True, logs, failed  # warning 不阻断
+        logs.append(f"[ruff] ❌ {msg}")
+        failed.append(FailedTest(name="ruff", reason=msg, severity="error"))
+        return False, logs, failed
     except subprocess.TimeoutExpired:
         msg = "ruff 检查超时（>30s）"
-        logs.append(f"[ruff] ⚠️ {msg}")
-        failed.append(FailedTest(name="ruff", reason=msg, severity="warning"))
-        return True, logs, failed
+        logs.append(f"[ruff] ❌ {msg}")
+        failed.append(FailedTest(name="ruff", reason=msg, severity="error"))
+        return False, logs, failed
 
     # ruff 退出码: 0=无问题, 1=有违规, 2=配置错误
     if result.returncode == 2:
         msg = f"ruff 配置错误: {result.stderr[:200]}"
-        logs.append(f"[ruff] ⚠️ {msg}")
-        failed.append(FailedTest(name="ruff", reason=msg, severity="warning"))
-        return True, logs, failed
+        logs.append(f"[ruff] ❌ {msg}")
+        failed.append(FailedTest(name="ruff", reason=msg, severity="error"))
+        return False, logs, failed
+
+    # python -m ruff 在 ruff 包没装/装坏时不会抛 FileNotFoundError（python
+    # 解释器本身肯定存在），而是非零退出码 + stdout 为空（错误信息在 stderr
+    # 里，比如 "No module named ruff"）。ruff 正常跑完哪怕 0 个问题，
+    # stdout 也会是 "[]" 而不是空字符串——用这个区分"真的跑了、没问题"和
+    # "根本没跑起来"，不然会被下面 `if result.stdout.strip():` 的判断悄悄
+    # 当成"0 个问题"放过，变成静默假通过
+    if result.returncode != 0 and not result.stdout.strip():
+        msg = f"ruff 未能正常执行: {result.stderr[:300] or '(无输出)'}"
+        logs.append(f"[ruff] ❌ {msg}")
+        failed.append(FailedTest(name="ruff", reason=msg, severity="error"))
+        return False, logs, failed
 
     # 解析 JSON 输出
     errors = 0
@@ -134,8 +160,10 @@ def ruff_check(app_path: str) -> Tuple[bool, List[str], List[FailedTest]]:
                     # 其余记日志，不进 failed_tests
                     logs.append(f"[ruff] ⚠️ {code} {filename}:{line} {message}")
         except json.JSONDecodeError:
-            # 非 JSON 输出（可能 ruff 版本问题），降级文本解析
-            logs.append(f"[ruff] 输出解析失败，原始输出: {result.stdout[:500]}")
+            msg = f"ruff 输出不是 JSON，无法可靠判断结果: {result.stdout[:500] or result.stderr[:500]}"
+            logs.append(f"[ruff] ❌ {msg}")
+            failed.append(FailedTest(name="ruff", reason=msg, severity="error"))
+            errors += 1
 
     passed = errors == 0
     if passed:
@@ -152,7 +180,7 @@ def pytest_check(app_path: str, pytest_result_path: str = None) -> Tuple[bool, L
     """读取 TestExpert 已跑完的 pytest 结果
 
     有 pytest_result_path（B 的 TestExpert 用 `pytest --json-report` 生成）
-    就读取真实结果；没有就跳过（保持向后兼容，独立自测/B 未接入时不受影响）。
+    就读取真实结果；没有报告就是流水线错误，不能跳过后假装通过。
 
     参数:
         app_path: 应用路径
@@ -162,19 +190,25 @@ def pytest_check(app_path: str, pytest_result_path: str = None) -> Tuple[bool, L
     failed: List[FailedTest] = []
 
     if not pytest_result_path:
-        logs.append("[pytest] ⏭️ 未提供 pytest_result_path，跳过（返回通过）")
-        return True, logs, failed
+        msg = "未提供 pytest_result_path，无法确认 TestExpert 是否真实运行"
+        logs.append(f"[pytest] ❌ {msg}")
+        failed.append(FailedTest(name="pytest", reason=msg, severity="error"))
+        return False, logs, failed
 
     report_path = Path(pytest_result_path)
     if not report_path.exists():
-        logs.append(f"[pytest] ⚠️ 报告文件不存在: {pytest_result_path}，跳过（返回通过）")
-        return True, logs, failed
+        msg = f"报告文件不存在: {pytest_result_path}"
+        logs.append(f"[pytest] ❌ {msg}")
+        failed.append(FailedTest(name="pytest", reason=msg, severity="error"))
+        return False, logs, failed
 
     try:
         data = json.loads(report_path.read_text(encoding="utf-8"))
     except Exception as e:
-        logs.append(f"[pytest] ⚠️ 报告解析失败: {type(e).__name__}: {str(e)[:150]}，跳过（返回通过）")
-        return True, logs, failed
+        msg = f"报告解析失败: {type(e).__name__}: {str(e)[:150]}"
+        logs.append(f"[pytest] ❌ {msg}")
+        failed.append(FailedTest(name="pytest", reason=msg, severity="error"))
+        return False, logs, failed
 
     summary = data.get("summary", {})
     total = summary.get("total", 0)
@@ -214,47 +248,50 @@ def llm_check(
     app_path: str,
     criteria: List[str] = None,
     code_content: str = None,
+    criteria_task_type: Optional[dict[str, str]] = None,
 ) -> Tuple[bool, List[str], List[FailedTest]]:
     """LLM 逐条核对验收标准
 
-    调用 A 的 ollama_client.generate_with_metrics()，用 validator_prompt.py 的提示词，
+    调用 A 的 llm_client.generate_with_metrics()，用 validator_prompt.py 的提示词，
     让 LLM 逐条判断每条验收标准是否在代码中实现。
 
-    降级策略:
-        - 无验收标准 → 跳过（返回通过）
-        - ollama_client 不可用（Ollama 未启动 / 无 DeepSeek Key）→ 降级为桩（不阻断）
+    violent 分支策略：无验收标准、LLM 不可用、返回不可解析都算真实失败。
     """
     logs = []
     failed: List[FailedTest] = []
+    criteria_items = [c for c in (criteria or []) if str(c).strip()]
 
-    # 无验收标准 → 直接跳过
-    if not criteria:
-        logs.append("[llm] ⏭️ 无验收标准，跳过")
-        return True, logs, failed
+    if not criteria_items:
+        msg = "无验收标准，无法证明需求是否实现"
+        logs.append(f"[llm] ❌ {msg}")
+        failed.append(FailedTest(name="llm", reason=msg, severity="error"))
+        return False, logs, failed
 
-    logs.append(f"[llm] 核对 {len(criteria)} 条验收标准...")
+    logs.append(f"[llm] 核对 {len(criteria_items)} 条验收标准...")
 
     # 准备代码内容
     if not code_content:
         code_content = read_app_code(app_path)
 
-    # 调用 A 的 ollama_client
+    # 调用 A 的 llm_client
     try:
-        from backend.agents.commander.ollama_client import generate_with_metrics
+        from backend.agents.commander.llm_client import generate_with_metrics
         from backend.agents.commander.call_log import log_call
     except ImportError:
-        logs.append("[llm] ⚠️ ollama_client 导入失败，降级为桩（返回通过）")
-        for c in criteria:
-            logs.append(f"[llm]   - {c}（未检查）")
-        return True, logs, failed
+        msg = "llm_client 导入失败，无法执行真实 LLM 验收"
+        logs.append(f"[llm] ❌ {msg}")
+        failed.append(FailedTest(name="llm", reason=msg, severity="error"))
+        return False, logs, failed
 
     # 组装 prompt
     try:
         from .validator_prompt import build_check_prompt
-    except ImportError:
+    except ImportError as exc:
+        if "attempted relative import" not in str(exc):
+            raise
         from validator_prompt import build_check_prompt
 
-    prompt = build_check_prompt(criteria, code_content)
+    prompt = build_check_prompt(criteria_items, code_content)
 
     # 调用 LLM
     # 用 generate_with_metrics 而不是裸 generate：同一个 API 调用，多返回
@@ -273,9 +310,8 @@ def llm_check(
             success=True,
         )
     except Exception as e:
-        # LLM 不可用 → 降级为 warning（不阻断流程）
         msg = f"LLM 调用失败: {type(e).__name__}: {str(e)[:150]}"
-        logs.append(f"[llm] ⚠️ {msg}")
+        logs.append(f"[llm] ❌ {msg}")
         log_call(
             caller="validator",
             model="unknown",
@@ -285,8 +321,8 @@ def llm_check(
             success=False,
             error_msg=str(e)[:200],
         )
-        failed.append(FailedTest(name="llm", reason=msg, severity="warning"))
-        return True, logs, failed  # warning 不阻断
+        failed.append(FailedTest(name="llm", reason=msg, severity="error"))
+        return False, logs, failed
 
     # 解析 LLM 返回的 JSON
     logs.append(f"[llm] LLM 返回: {raw[:200]}...")
@@ -302,6 +338,10 @@ def llm_check(
         results = result.get("results", [])
         all_passed = result.get("all_passed", True)
         summary = result.get("summary", "")
+        if not results:
+            msg = "LLM 返回中没有 results，无法证明验收标准已逐条核对"
+            logs.append(f"[llm] ❌ {msg}")
+            failed.append(FailedTest(name="llm", reason=msg, severity="error"))
 
         # 逐条记录
         for item in results:
@@ -320,6 +360,7 @@ def llm_check(
                 failed.append(FailedTest(
                     name=f"llm:{criteria_text}",
                     reason=evidence[:200],
+                    task_type=(criteria_task_type or {}).get(criteria_text),
                     severity=severity,
                 ))
             else:
@@ -328,17 +369,21 @@ def llm_check(
         if summary:
             logs.append(f"[llm] 📋 {summary}")
 
+        if all_passed is False and not any(f.severity == "error" for f in failed):
+            msg = "LLM 声明 all_passed=false，但没有给出具体失败项"
+            logs.append(f"[llm] ❌ {msg}")
+            failed.append(FailedTest(name="llm", reason=msg, severity="error"))
+
         # 仅 error 级别算失败，warning 不影响 passed
         passed = not any(f.severity == "error" for f in failed)
         return passed, logs, failed
 
     except (json.JSONDecodeError, KeyError) as e:
-        # JSON 解析失败 → 不阻断，把原始返回记在日志里
         msg = f"LLM 返回解析失败: {type(e).__name__}: {str(e)[:100]}"
-        logs.append(f"[llm] ⚠️ {msg}")
+        logs.append(f"[llm] ❌ {msg}")
         logs.append(f"[llm] 原始返回: {raw[:500]}")
-        failed.append(FailedTest(name="llm", reason=msg, severity="warning"))
-        return True, logs, failed  # warning 不阻断
+        failed.append(FailedTest(name="llm", reason=msg, severity="error"))
+        return False, logs, failed
 
 
 # ===== 读取代码内容（供 LLM 检查用） =====
@@ -348,6 +393,8 @@ def read_app_code(app_path: str, max_chars: int = 8000) -> str:
 
     如果 app_path 是目录，读取目录下所有 .py 文件合并。
     """
+    if not app_path or not str(app_path).strip():
+        raise ValueError("应用路径不能为空，不能把当前工作目录当作被验证应用")
     target = Path(app_path)
     if target.is_file():
         content = target.read_text(encoding="utf-8", errors="ignore")
@@ -358,4 +405,4 @@ def read_app_code(app_path: str, max_chars: int = 8000) -> str:
             parts.append(f"# ===== {py.name} =====\n{py.read_text(encoding='utf-8', errors='ignore')}")
         joined = "\n\n".join(parts)
         return joined[:max_chars] + ("\n...[截断]" if len(joined) > max_chars else "")
-    return ""
+    raise FileNotFoundError(f"应用路径不存在: {app_path}")

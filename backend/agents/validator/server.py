@@ -41,13 +41,26 @@ class ValidateRequest(BaseModel):
         default=None,
         description="验收标准列表（来自 Commander 的 acceptance_criteria，可选）",
     )
+    criteria_task_type: Optional[dict[str, str]] = Field(
+        default=None,
+        description="验收标准文本到 Commander 任务类型的映射",
+    )
     iteration: int = Field(default=0, description="修复轮次（由 B 传入）")
+    code_content: Optional[str] = Field(
+        default=None,
+        description="调用方提供的完整代码内容，避免 Validator 自行截断读取",
+    )
+    pytest_result_path: Optional[str] = Field(
+        default=None,
+        description="pytest --json-report 输出路径，缺失时必须明确失败",
+    )
 
 
 class FailedTestResponse(BaseModel):
     """失败项（对齐 B 期望的 failed_tests 格式）"""
     name: str
     reason: str
+    task_type: Optional[str] = None
     severity: str = "error"
 
 
@@ -79,17 +92,16 @@ def validate_endpoint(req: ValidateRequest) -> ValidateResponse:
         report = _validate(
             app_path=req.app_path,
             criteria=req.criteria,
+            criteria_task_type=req.criteria_task_type,
             iteration=req.iteration,
+            code_content=req.code_content,
+            pytest_result_path=req.pytest_result_path,
         )
     except Exception as e:
-        # 保证异常时也返回结构化结果（B 不会因为 C 崩了而卡死）
-        return ValidateResponse(
-            passed=False,
-            logs=[f"[validator] 内部异常: {type(e).__name__}: {str(e)[:300]}"],
-            screenshot="",
-            failed_tests=[FailedTestResponse(name="validator", reason=str(e)[:300])],
-            app_path=req.app_path,
-        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Validator 真实执行失败: {type(e).__name__}: {str(e)[:300]}",
+        ) from e
 
     # TestReport → ValidateResponse（字段名一致，直接构造）
     return ValidateResponse(
@@ -97,7 +109,7 @@ def validate_endpoint(req: ValidateRequest) -> ValidateResponse:
         logs=report.logs,
         screenshot=report.screenshot,
         failed_tests=[
-            FailedTestResponse(name=f.name, reason=f.reason, severity=f.severity)
+            FailedTestResponse(name=f.name, reason=f.reason, task_type=f.task_type, severity=f.severity)
             for f in report.failed_tests
         ],
         app_path=report.app_path,

@@ -25,6 +25,5 @@ FastAPI 服务（B 的 validator_stub.py 通过 HTTP 调用）:
 
 from .run import validate, health_check, detect_app_type
 from .schemas import TestReport, FailedTest
-from .server import app as fastapi_app
 
-__all__ = ["validate", "health_check", "detect_app_type", "TestReport", "FailedTest", "fastapi_app"]
+__all__ = ["validate", "health_check", "detect_app_type", "TestReport", "FailedTest"]

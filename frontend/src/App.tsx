@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAppStore, type AgentStatus } from '@/store/appStore'
-import { startAgentWorkflow as realStartAgentWorkflow } from '@/lib/agentClient'
-import { startAgentWorkflow as mockStartAgentWorkflow } from '@/mocks/mockWebSocket'
-import { fetchTokenMetrics } from '@/lib/api'
-
-// 通过环境变量 VITE_USE_MOCK 控制模式：
-//   VITE_USE_MOCK=true  → 使用 Mock 模拟数据（前端独立开发/演示）
-//   不设置或设为 false  → 连接真实后端 127.0.0.1:8000
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
-const startAgentWorkflow = USE_MOCK ? mockStartAgentWorkflow : realStartAgentWorkflow
+import { startAgentWorkflow } from '@/lib/agentClient'
+import { fetchTokenMetrics, type TokenMetric } from '@/lib/api'
 import {
   BarChart,
   Bar,
@@ -212,6 +205,9 @@ function LogLine({
     success: 'text-emerald-400',
   }
   const fallbackColor = levelColors[entry.level] || 'text-slate-300'
+  const hasStatusPrefix = entry.message.startsWith('✅')
+    || entry.message.startsWith('❌')
+    || entry.message.startsWith('⏭️')
 
   return (
     <div className="flex gap-2 py-0.5 font-mono text-xs leading-relaxed animate-slide-in">
@@ -219,7 +215,7 @@ function LogLine({
       <span className="text-violet-400 dark:text-violet-400 flex-shrink-0 font-semibold">
         [{entry.agent}]
       </span>
-      <span className={entry.message.match(/^[✅❌⏭️]/) ? textColor : fallbackColor}>
+      <span className={hasStatusPrefix ? textColor : fallbackColor}>
         {entry.message}
       </span>
     </div>
@@ -232,16 +228,6 @@ const EXAMPLE_PROMPTS = [
   '开发一个待办事项桌面应用，支持添加、完成、删除任务',
   '构建一个简单的个人记账应用，支持收入支出记录和月度统计',
   '做一个天气预报查询工具，输入城市名显示天气信息',
-]
-
-// ============ Token 消耗 Mock 数据 ============
-
-const TOKEN_DATA = [
-  { name: 'Commander', tokens: 1200 },
-  { name: 'Backend', tokens: 600 },
-  { name: 'Frontend', tokens: 400 },
-  { name: 'Test', tokens: 300 },
-  { name: 'UIValidator', tokens: 200 },
 ]
 
 // ============ 主组件 ============
@@ -264,11 +250,14 @@ function App() {
     (el: HTMLDivElement | null) => {
       if (el) el.scrollTop = el.scrollHeight
     },
+    // callback ref 只在"挂到 ref 上的函数引用变了"时才会被 React 重新调用，
+    // 不是 useEffect 那种"依赖值变了就重新执行"——依赖必须带 logs.length，
+    // 否则这个函数只在挂载时创建一次，之后日志再怎么刷新都不会再自动滚到底部
     [logs.length]
   )
 
-  // Token 消耗数据：初始用静态兜底，任务完成后自动从后端拉取真实数据
-  const [tokenData, setTokenData] = useState(TOKEN_DATA)
+  // Token 消耗数据只展示后端真实返回；接口失败时明确写日志，不放 Mock 柱子。
+  const [tokenData, setTokenData] = useState<TokenMetric[]>([])
   const [tokenLoading, setTokenLoading] = useState(false)
   const prevRunning = useRef(isRunning)
 
@@ -276,10 +265,15 @@ function App() {
     setTokenLoading(true)
     fetchTokenMetrics()
       .then((data) => {
-        if (data && data.length > 0) setTokenData(data)
+        setTokenData(data)
       })
-      .catch(() => {
-        // 接口失败静默兜底，保留现有数据（可能是 TOKEN_DATA 或上一轮的真实数据）
+      .catch((err) => {
+        useAppStore.getState().addLog({
+          timestamp: Date.now(),
+          agent: 'System',
+          message: `Token 统计获取失败: ${err instanceof Error ? err.message : String(err)}`,
+          level: 'error',
+        })
       })
       .finally(() => setTokenLoading(false))
   }, [])
@@ -294,8 +288,8 @@ function App() {
 
   // 页面首次加载时也拉一次
   useEffect(() => {
-    refreshTokens()
-  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+    void Promise.resolve().then(refreshTokens)
+  }, [refreshTokens])
 
   const handleRun = () => {
     const input = userInput.trim()
@@ -596,7 +590,7 @@ function App() {
                     border: '1px solid #e2e8f0',
                     fontSize: '13px',
                   }}
-                  formatter={(value: number) => [`${value.toLocaleString()} tokens`, '消耗量']}
+                  formatter={(value) => [`${Number(value ?? 0).toLocaleString()} tokens`, '消耗量']}
                 />
                 <Bar dataKey="tokens" fill="#3b82f6" radius={[4, 4, 0, 0]}>
                   <LabelList

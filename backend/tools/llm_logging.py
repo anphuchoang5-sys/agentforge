@@ -2,7 +2,7 @@
 llm_logging.py — 给 LLM 调用包一层耗时 + Token 统计
 B 核心产出物 · 落盘复用 A 的 backend/agents/commander/call_log.py
 
-各专家 Agent 直接用 langchain_openai.ChatOpenAI，没走 A 的 ollama_client.py，
+各专家 Agent 直接用 langchain_openai.ChatOpenAI，没走 A 的 llm_client.py，
 所以调用记录不会自动落进 call_log 的 SQLite 表——用这个包一层就行，
 调用方用法跟直接 llm.invoke(messages) 完全一样，只是多记一笔。
 """

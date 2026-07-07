@@ -7,7 +7,10 @@ subprocess 隔离执行，捕获 stdout + stderr，设置超时防挂死。
 """
 
 import subprocess
-import sys
+import shlex
+
+
+_SHELL_METACHARS = ("&&", "||", "|", ";", "`", ">", "<")
 
 
 def run_command(cmd: str, cwd: str = ".", timeout: int = 60) -> dict:
@@ -27,11 +30,20 @@ def run_command(cmd: str, cwd: str = ".", timeout: int = 60) -> dict:
             "cmd": "pytest ...",
         }
     """
+    if not cmd or not cmd.strip():
+        raise ValueError("命令不能为空")
+    if any(token in cmd for token in _SHELL_METACHARS):
+        raise ValueError(f"拒绝执行包含 shell 元字符的命令: {cmd}")
+
+    args = shlex.split(cmd, posix=True)
+    if not args:
+        raise ValueError("命令解析后为空")
+
     print(f"[run_command] {cmd}  (cwd={cwd})")
     try:
         result = subprocess.run(
-            cmd,
-            shell=True,
+            args,
+            shell=False,
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -59,3 +71,5 @@ def run_command(cmd: str, cwd: str = ".", timeout: int = 60) -> dict:
             "returncode": -1,
             "cmd": cmd,
         }
+    except FileNotFoundError as e:
+        raise RuntimeError(f"命令不存在或不可执行: {args[0]}") from e

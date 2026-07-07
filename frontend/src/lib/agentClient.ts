@@ -35,11 +35,21 @@ function errorMessage(err: unknown): string {
 }
 
 /** 判断一个 JSON 对象是否是 Validator 结果（无 type 字段，但包含 passed 布尔值） */
-function isValidatorPayload(data: Record<string, unknown>): data is RawValidatorPayload {
-  return typeof data.passed === 'boolean'
+function isValidatorPayload(data: unknown): data is RawValidatorPayload {
+  return typeof data === 'object'
+    && data !== null
+    && typeof (data as { passed?: unknown }).passed === 'boolean'
 }
 
-/** 把 Validator 结果写入 Zustand store */
+/** 把 Validator 结果写入 Zustand store
+ *
+ * 只更新验证结果摘要（screenshot/failedTests/iteration 等），不重复往日志面板
+ * 追加 data.logs 里的每一行——后端 event_translator.py::_on_validator() 已经把
+ * 同一批日志行逐条作为独立的 {type:'log'} 事件推过一遍（在这条扁平 Validator
+ * 结果之前），这里如果再 addLog 一次，同一轮验证的日志块会在面板里出现两次；
+ * done 事件里 result 也带着同一份 logs，再经过这里会变成第三次——这正是"多轮
+ * 修复 error 越来越多"的表现，其实是同一批日志被重复渲染，不是真的又多失败了。
+ */
 function applyValidatorResult(s: ReturnType<typeof useAppStore.getState>, data: RawValidatorPayload): void {
   s.setValidationResult({
     passed: data.passed,
@@ -50,17 +60,6 @@ function applyValidatorResult(s: ReturnType<typeof useAppStore.getState>, data: 
     appPath: data.app_path || '',
     appType: data.app_type || '',
   })
-
-  for (const line of data.logs) {
-    const level: LogEntry['level'] = line.startsWith('✅')
-      ? 'success'
-      : line.startsWith('❌')
-        ? 'error'
-        : line.startsWith('⏭️')
-          ? 'warn'
-          : 'info'
-    s.addLog({ timestamp: Date.now(), agent: 'Validator', message: line, level })
-  }
 }
 
 // ============ 主入口 ============
@@ -150,9 +149,23 @@ export async function startAgentWorkflow(requirement: string): Promise<void> {
     if (typeof data.type === 'string') {
       const typed = data as unknown as RawEvent
       switch (typed.type) {
-        case 'log':
-          s.addLog({ timestamp: typed.timestamp || Date.now(), agent: typed.agent, message: typed.message, level: typed.level })
+        case 'log': {
+          // 后端 event_translator.py::_on_validator() 把每行 Validator 日志都标成
+          // level="info"，真正的通过/失败/跳过是编码在消息本身的 ✅/❌/⏭️ 前缀里
+          // （对齐原 applyValidatorResult 里的这套前缀判断，现在挪到这里做，
+          // 避免同一行日志再从 Validator 扁平结果里被 addLog 第二遍）
+          const level: LogEntry['level'] = typed.agent === 'Validator'
+            ? (typed.message.startsWith('✅')
+              ? 'success'
+              : typed.message.startsWith('❌')
+                ? 'error'
+                : typed.message.startsWith('⏭️')
+                  ? 'warn'
+                  : typed.level)
+            : typed.level
+          s.addLog({ timestamp: typed.timestamp || Date.now(), agent: typed.agent, message: typed.message, level })
           break
+        }
         case 'node_status':
           s.updateNodeStatus(typed.id, typed.status)
           break
@@ -180,7 +193,12 @@ export async function startAgentWorkflow(requirement: string): Promise<void> {
           ws.close()
           break
         default:
-          s.addLog({ timestamp: Date.now(), agent: 'System', message: `未知事件类型: ${typed.type}`, level: 'warn' })
+          s.addLog({
+            timestamp: Date.now(),
+            agent: 'System',
+            message: `未知事件类型: ${String((data as { type?: unknown }).type)}`,
+            level: 'warn',
+          })
       }
     } else if (isValidatorPayload(data)) {
       // 无 type 字段，但包含 passed — Validator 结果（扁平 JSON）

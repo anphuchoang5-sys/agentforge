@@ -16,8 +16,8 @@ from collections import Counter
 
 # 接口规范里的函数名都是 verb_noun 形式（spec/SKILL.md 定的命名规范），
 # 去掉常见动词前缀剩下的名词就是业务领域词，可以直接当输出目录名。
-# 这套逻辑只在 Commander 没给出 app_name 时（比如走 Ollama 兜底、JSON 解析
-# 没覆盖到这个字段）当兜底，优先信号源是 decomp.app_name。
+# 这套逻辑只在 Commander 没给出 app_name 时用 api_spec 做确定性派生；
+# 如果仍然派生不出来，violent 分支会明确报错，不写 generated_app 这类万能目录。
 _CRUD_VERBS = {"create", "get", "update", "delete", "add", "remove", "list", "find", "fetch", "set", "all"}
 
 
@@ -32,7 +32,7 @@ def _derive_app_name(decomp) -> str:
         if noun.endswith("s") and len(noun) > 3:
             noun = noun[:-1]
         nouns.append(noun)
-    return Counter(nouns).most_common(1)[0][0] if nouns else "generated_app"
+    return Counter(nouns).most_common(1)[0][0] if nouns else ""
 
 
 def _sanitize_app_name(name: str) -> str:
@@ -43,9 +43,12 @@ def _sanitize_app_name(name: str) -> str:
 def resolve_output_dir(base_dir: str, decomp) -> str:
     """算出这次任务实际要写入的目录：base_dir/应用名
 
-    优先用 Commander 直接给出的 app_name，拿不到才退回 _derive_app_name 兜底。
+    优先用 Commander 直接给出的 app_name，拿不到才从 api_spec.functions 派生；
+    两者都失败就报错。
     """
     app_name = _sanitize_app_name(decomp.app_name) if decomp.app_name else ""
     if not app_name:
         app_name = _derive_app_name(decomp)
+    if not app_name:
+        raise RuntimeError("无法从 Commander app_name 或 api_spec.functions 解析出应用目录名")
     return f"{base_dir.rstrip('/')}/{app_name}"

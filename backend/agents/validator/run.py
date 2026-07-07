@@ -22,25 +22,23 @@ from typing import List, Optional
 try:
     from .schemas import TestReport, FailedTest
     from . import checkers
-except ImportError:
+except ImportError as exc:
+    if "attempted relative import" not in str(exc):
+        raise
     from schemas import TestReport, FailedTest
     import checkers
 
 # desktop_control 在 backend/mcp_tools/，双导入
 try:
-    from backend.mcp_tools.desktop_control import (
-        app_launch, app_close, ui_click, ui_input, ui_get_text, screenshot,
-        launch_and_get_window,
-    )
+    from backend.mcp_tools.desktop_control import screenshot
     from backend.tools.console_encoding import ensure_utf8_console
-except ImportError:
+except ImportError as exc:
+    if "No module named 'backend'" not in str(exc):
+        raise
     # 直接运行时回退：把项目根加入 sys.path，让 backend namespace package 可导入
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).parents[3]))
-    from backend.mcp_tools.desktop_control import (
-        app_launch, app_close, ui_click, ui_input, ui_get_text, screenshot,
-        launch_and_get_window,
-    )
+    from backend.mcp_tools.desktop_control import screenshot
     from backend.tools.console_encoding import ensure_utf8_console
 
 # 自测块（__main__）里会 print(report.logs)，里面全是 ✅❌⚠️⏭️ 前缀，
@@ -81,12 +79,66 @@ def detect_app_type(app_path: str) -> str:
 
 # ===== 桌面应用启动 + 截图 =====
 
+def _descendant_pids(root_pid: int) -> List[int]:
+    """枚举 root_pid 的所有子孙进程 PID（Win32 Toolhelp32 快照，不依赖 psutil）
+
+    .venv 里的 pythonw.exe 在部分 CPython 发行版（venvlauncher 机制）不是解释器本体，
+    而是一个转发桩：Popen 拿到的 PID 是这个桩进程，它再拉起真正的解释器子进程，
+    Tkinter 窗口是子进程创建的，归属于子进程 PID，不归属于桩进程 PID。
+    Application.connect(process=桩PID) 永远找不到窗口（"No windows for that
+    process could be found"），必须连子进程 PID 才行。
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    class _PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.POINTER(wintypes.ULONG)),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_wchar * 260),
+        ]
+
+    TH32CS_SNAPPROCESS = 0x00000002
+    kernel32 = ctypes.windll.kernel32
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if snapshot == -1:
+        return []
+
+    parent_map: dict[int, List[int]] = {}
+    try:
+        entry = _PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
+        if kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
+            while True:
+                parent_map.setdefault(entry.th32ParentProcessID, []).append(entry.th32ProcessID)
+                if not kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
+                    break
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+    descendants: List[int] = []
+    frontier = [root_pid]
+    while frontier:
+        pid = frontier.pop()
+        children = parent_map.get(pid, [])
+        descendants.extend(children)
+        frontier.extend(children)
+    return descendants
+
+
 def _launch_and_screenshot(app_path: str, logs: List[str]) -> tuple[str, Optional[str]]:
     """启动桌面应用并截图
 
     用 subprocess 启动 + Application.connect(process=pid) 连接（最鲁棒）:
     - 不依赖 pywinauto 的 start 进程跟踪（对 pythonw 不可靠）
-    - 只连目标进程，不枚举所有窗口（避免 sandbox 限制）
+    - 只连目标进程 + 其子孙进程，不枚举全部窗口（避免 sandbox 限制）
 
     返回:
         (screenshot_b64, executable_name) — 截图失败时 screenshot_b64 为空
@@ -108,6 +160,7 @@ def _launch_and_screenshot(app_path: str, logs: List[str]) -> tuple[str, Optiona
 
     proc = None
     app = None
+    connected_pid = None
     try:
         proc = _sp.Popen([launcher, app_path], stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
         logs.append(f"[screenshot] 子进程 PID={proc.pid}，等待窗口渲染...")
@@ -119,16 +172,21 @@ def _launch_and_screenshot(app_path: str, logs: List[str]) -> tuple[str, Optiona
             _time.sleep(wait_s)
             if proc.poll() is not None:
                 raise RuntimeError(f"子进程已退出（returncode={proc.returncode}），可能启动失败")
-            try:
-                app = _App(backend="win32").connect(process=proc.pid, timeout=3)
-                window = app.top_window()
-                if window.exists() and window.is_visible():
-                    logs.append(f"[screenshot] 窗口已就绪: {window.window_text()!r}")
-                    break
-            except Exception as retry_e:
-                logs.append(f"[screenshot] 重试中: {type(retry_e).__name__}: {str(retry_e)[:100]}")
-                app = None
-                window = None
+            # 候选 PID：先试桩进程自己，再试它的子孙进程（venvlauncher 场景）
+            for candidate_pid in [proc.pid] + _descendant_pids(proc.pid):
+                try:
+                    app = _App(backend="win32").connect(process=candidate_pid, timeout=3)
+                    window = app.top_window()
+                    if window.exists() and window.is_visible():
+                        connected_pid = candidate_pid
+                        logs.append(f"[screenshot] 窗口已就绪（PID={candidate_pid}）: {window.window_text()!r}")
+                        break
+                except Exception as retry_e:
+                    logs.append(f"[screenshot] 重试中(PID={candidate_pid}): {type(retry_e).__name__}: {str(retry_e)[:100]}")
+                    app = None
+                    window = None
+            if window is not None:
+                break
 
         if window is None:
             raise RuntimeError("等待窗口超时（9 秒内未出现可见窗口）")
@@ -143,17 +201,22 @@ def _launch_and_screenshot(app_path: str, logs: List[str]) -> tuple[str, Optiona
         # 截图失败不阻断，返回空截图
         return "", None
     finally:
-        # 清理进程：优先 kill app，兜底 kill proc
+        # 清理进程：优先 kill app 连上的那个（可能是子孙进程），
+        # 再兜底 kill proc 本身和它所有子孙——桩进程和真正的解释器
+        # 子进程是两个独立的 Windows 进程，kill 父进程不会自动带走子进程
         if app is not None:
             try:
                 app.kill()
             except Exception:
                 pass
-        if proc is not None and proc.poll() is None:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+        if proc is not None:
+            for pid in ([proc.pid] + _descendant_pids(proc.pid) if proc.poll() is None else []):
+                if pid == connected_pid:
+                    continue
+                try:
+                    _sp.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
+                except Exception:
+                    pass
 
 
 # ===== 主入口 =====
@@ -161,6 +224,7 @@ def _launch_and_screenshot(app_path: str, logs: List[str]) -> tuple[str, Optiona
 def validate(
     app_path: str,
     criteria: Optional[List[str]] = None,
+    criteria_task_type: Optional[dict[str, str]] = None,
     iteration: int = 0,
     code_content: Optional[str] = None,
     pytest_result_path: Optional[str] = None,
@@ -193,8 +257,24 @@ def validate(
     all_failed: List[FailedTest] = []
 
     # 0. 探测应用类型
-    app_type = detect_app_type(app_path)
-    all_logs.append(f"[detect] 应用类型: {app_type}")
+    # detect_app_type()/read_app_code() 内部该抛的抛（路径为空/不存在时 raise），
+    # 这符合"内部检查该报错就报错"的原则；但 validate() 自己的文档承诺是"总是
+    # 返回 TestReport"——如果这里不接住，紧接着 compile_check() 对同一种
+    # "路径不存在"情况本来准备好的优雅处理（返回失败而不是崩）根本没机会跑到，
+    # 整个函数会在这里直接崩给调用方一个未处理异常，把 validator_node 的重试
+    # 闭环也一起干掉。这里接住，转换成跟 compile_check 一致的"记一条失败，继续走"
+    try:
+        app_type = detect_app_type(app_path)
+    except (ValueError, FileNotFoundError) as e:
+        app_type = "unknown"
+        all_logs.append(f"[detect] ❌ {e}")
+        all_failed.append(FailedTest(name="detect", reason=str(e), severity="error"))
+    else:
+        all_logs.append(f"[detect] 应用类型: {app_type}")
+        if app_type == "unknown":
+            msg = "无法识别应用类型，不能证明生成了可运行 UI"
+            all_logs.append(f"[detect] ❌ {msg}")
+            all_failed.append(FailedTest(name="detect", reason=msg, severity="error"))
 
     # 1. 编译检查
     passed, logs, failed = checkers.compile_check(app_path)
@@ -218,7 +298,12 @@ def validate(
     if code_content is None and criteria:
         app_dir = str(Path(app_path).parent) if Path(app_path).is_file() else app_path
         code_content = checkers.read_app_code(app_dir)
-    passed, logs, failed = checkers.llm_check(app_path, criteria, code_content)
+    passed, logs, failed = checkers.llm_check(
+        app_path,
+        criteria,
+        code_content,
+        criteria_task_type=criteria_task_type,
+    )
     all_logs.extend(logs)
     all_failed.extend(failed)
 
@@ -226,8 +311,14 @@ def validate(
     screenshot_b64 = ""
     if compile_ok and app_type == "desktop":
         screenshot_b64, _ = _launch_and_screenshot(app_path, all_logs)
+        if not screenshot_b64:
+            msg = "桌面应用启动或截图失败，不能把 UI 验证视为通过"
+            all_logs.append(f"[screenshot] ❌ {msg}")
+            all_failed.append(FailedTest(name="screenshot", reason=msg, severity="error"))
     elif compile_ok and app_type == "web":
-        all_logs.append("[screenshot] ⏭️ Web 应用暂不支持（Playwright 未集成），跳过截图")
+        msg = "Web 应用验证未集成 Playwright，不能跳过后视为通过"
+        all_logs.append(f"[screenshot] ❌ {msg}")
+        all_failed.append(FailedTest(name="screenshot", reason=msg, severity="error"))
     elif not compile_ok:
         all_logs.append("[screenshot] ⏭️ 编译未通过，跳过启动截图")
 
@@ -264,9 +355,14 @@ def health_check() -> dict:
     except ImportError:
         pass
     try:
-        subprocess.run(["ruff", "--version"], capture_output=True, timeout=5)
-        status["ruff"] = True
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+        result = subprocess.run(
+            [sys.executable, "-m", "ruff", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        status["ruff"] = result.returncode == 0
+    except subprocess.TimeoutExpired:
         pass
     return status
 

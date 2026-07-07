@@ -15,8 +15,9 @@ export interface TokenMetric {
   tokens: number
 }
 
+// 对齐 backend/agents/validator/run.py 的 health_check() 实际返回形状——
+// 那边只有这三个布尔字段，没有 status，之前这里凭空多写了一个后端不返回的字段
 export interface HealthStatus {
-  status: string
   pywinauto: boolean
   ruff: boolean
   py_compile: boolean

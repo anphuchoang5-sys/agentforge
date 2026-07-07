@@ -9,7 +9,7 @@ validator_prompt.py — 验证者 Agent System Prompt
 - CLAUDE.md: 验证者做"验收标准对比"
 - 验证者.html: LLM 逐条核对（检查③）
 
-MVP 阶段: llm_check 为桩函数，此 Prompt 先写好待接入 A 的 ollama_client 后使用。
+MVP 阶段: llm_check 为桩函数，此 Prompt 先写好待接入 A 的 llm_client 后使用。
 """
 
 VALIDATOR_SYSTEM_PROMPT = """# 角色

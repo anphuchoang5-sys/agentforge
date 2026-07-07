@@ -14,7 +14,7 @@ from typing import Optional
 
 
 # 日志数据库路径（跟项目走）
-LOG_DB_PATH = Path(__file__).parents[4] / "data" / "call_logs.db"
+LOG_DB_PATH = Path(__file__).parents[3] / "data" / "call_logs.db"
 
 
 def _get_db() -> sqlite3.Connection:
@@ -96,35 +96,3 @@ def get_recent_logs(limit: int = 50) -> list[dict]:
         conn.close()
 
 
-def get_stats() -> dict:
-    """获取汇总统计（D的Recharts图表用）"""
-    conn = _get_db()
-    try:
-        total = conn.execute("SELECT COUNT(*) FROM call_logs").fetchone()[0]
-        avg_duration = conn.execute(
-            "SELECT AVG(duration_ms) FROM call_logs WHERE success=1"
-        ).fetchone()[0] or 0
-        total_tokens = conn.execute(
-            "SELECT SUM(tokens) FROM call_logs WHERE success=1"
-        ).fetchone()[0] or 0
-
-        # 按调用方统计
-        by_caller = conn.execute(
-            """
-            SELECT caller, COUNT(*) as calls, AVG(duration_ms) as avg_ms
-            FROM call_logs WHERE success=1
-            GROUP BY caller
-            """
-        ).fetchall()
-
-        return {
-            "total_calls": total,
-            "avg_duration_ms": round(avg_duration, 0),
-            "total_tokens": total_tokens,
-            "by_caller": [
-                {"caller": row[0], "calls": row[1], "avg_duration_ms": round(row[2], 0)}
-                for row in by_caller
-            ],
-        }
-    finally:
-        conn.close()

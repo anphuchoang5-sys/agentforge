@@ -46,7 +46,12 @@ def validator_node(state: ProjectState) -> dict:
     from backend.agents.validator_stub import validate
 
     decomp = state.get("task_decomposition")
-    criteria = [c for t in (decomp.tasks if decomp else []) for c in t.acceptance_criteria]
+    criteria = []
+    criteria_task_type: dict[str, str] = {}
+    for t in (decomp.tasks if decomp else []):
+        for c in t.acceptance_criteria:
+            criteria.append(c)
+            criteria_task_type[c] = t.type
 
     code_content = (
         f"# ===== db.py =====\n{state.get('backend_code') or ''}\n\n"
@@ -58,6 +63,7 @@ def validator_node(state: ProjectState) -> dict:
         app_path=state.get("frontend_path", ""),
         test_results=state.get("test_results", ""),
         criteria=criteria,
+        criteria_task_type=criteria_task_type,
         code_content=code_content,
         pytest_result_path=state.get("pytest_report_path"),
     )

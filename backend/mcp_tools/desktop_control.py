@@ -46,30 +46,6 @@ def app_launch(
     return app
 
 
-def app_connect(
-    window_title: str,
-    timeout: float = 5,
-    backend: str = "win32",
-) -> Application:
-    """连接已存在的窗口（按标题模糊匹配）
-
-    用于验证 B 生成的桌面应用：先 start 它再 connect，或直接连已开的窗口。
-    """
-    app = Application(backend=backend).connect(
-        title_re=f".*{window_title}.*", timeout=timeout
-    )
-    return app
-
-
-def app_close(app: Application) -> None:
-    """关闭应用（强杀，保证不留残留进程）"""
-    try:
-        app.kill()
-    except Exception as e:
-        # kill 失败不抛错，避免影响报告生成
-        print(f"[WARN] app_close 失败: {e}")
-
-
 # ===== 元素定位（内部） =====
 
 def _find(window, locator: str):
@@ -217,23 +193,14 @@ def screenshot(app_or_window=None) -> str:
         img = ImageGrab.grab()
     else:
         window = _resolve_window(app_or_window)
+        # capture_as_image() 不是从窗口离屏绘制缓冲区取图，而是直接截取窗口
+        # 在屏幕上的那块像素区域（pywinauto 官方已知限制/issue #995）——如果
+        # 这块屏幕区域被别的窗口挡住，截到的会是挡在上面的窗口内容，不是目标
+        # 应用真正的画面。截图前先把目标窗口切到最前面/给焦点，避免被其他
+        # 窗口遮挡导致截图内容驴唇不对马嘴
+        window.set_focus()
         img = window.capture_as_image()
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("ascii")
-
-
-# ===== 便捷：启动并拿窗口 =====
-
-def launch_and_get_window(executable: str, timeout: float = 10):
-    """启动应用并直接返回主窗口对象（ui_* 函数可直接传窗口）
-
-    用法:
-        win = launch_and_get_window("notepad.exe")
-        ui_input(win, "Edit", "hello")
-        text = ui_get_text(win, "Edit")
-        img_b64 = screenshot(win)
-    """
-    app = app_launch(executable, timeout=timeout)
-    return app.top_window()

@@ -26,13 +26,21 @@ ensure_utf8_console()
 
 def _zip_output(output_dir: str) -> str:
     """把生成的代码文件夹打成 zip"""
+    if not os.path.isdir(output_dir):
+        raise RuntimeError(f"输出目录不存在，拒绝打包: {output_dir}")
+    files_to_pack = [
+        os.path.join(root, file)
+        for root, _, files in os.walk(output_dir)
+        for file in files
+    ]
+    if not files_to_pack:
+        raise RuntimeError(f"输出目录为空，拒绝打包空交付物: {output_dir}")
+
     zip_path = output_dir.rstrip("/") + ".zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, _, files in os.walk(output_dir):
-            for file in files:
-                full_path = os.path.join(root, file)
-                arcname = os.path.relpath(full_path, output_dir)
-                zf.write(full_path, arcname)
+        for full_path in files_to_pack:
+            arcname = os.path.relpath(full_path, output_dir)
+            zf.write(full_path, arcname)
     print(f"[run] 打包完成: {zip_path}")
     return zip_path
 
@@ -150,10 +158,31 @@ def run(
         # "格式合法但内容为空"的 zip 冒充交付物，这正是 CLAUDE.md 明确禁止的
         # "静默兜底成假成功"（problem.md 第29条），必须在这里主动拦下来
         final_output_dir = final_state["app_output_dir"]
-        if not final_state.get("backend_code") and not final_state.get("frontend_code"):
+        required_outputs = {
+            "BackendExpert.backend_code": final_state.get("backend_code"),
+            "BackendExpert.backend_path": final_state.get("backend_path"),
+            "FrontendExpert.frontend_code": final_state.get("frontend_code"),
+            "FrontendExpert.frontend_path": final_state.get("frontend_path"),
+            "TestExpert.test_code": final_state.get("test_code"),
+            "TestExpert.test_path": final_state.get("test_path"),
+            "TestExpert.pytest_report_path": final_state.get("pytest_report_path"),
+        }
+        missing = [name for name, value in required_outputs.items() if not value]
+        if missing:
             raise RuntimeError(
-                f"代码生成流程未产出任何代码（需求：{user_input!r}，"
-                f"输出目录：{final_output_dir}），拒绝打包空交付物"
+                f"代码生成流程缺少真实产出（需求：{user_input!r}，输出目录：{final_output_dir}）："
+                + ", ".join(missing)
+            )
+
+        missing_files = [
+            name for name in (
+                "backend_path", "frontend_path", "test_path", "pytest_report_path"
+            )
+            if not os.path.exists(final_state[name])
+        ]
+        if missing_files:
+            raise RuntimeError(
+                "代码生成流程记录了路径但文件不存在: " + ", ".join(missing_files)
             )
 
         deliverable = _zip_output(final_output_dir)

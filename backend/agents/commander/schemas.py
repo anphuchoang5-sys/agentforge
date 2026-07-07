@@ -59,7 +59,7 @@ class TaskDecomposition(BaseModel):
     app_name: Optional[str] = Field(
         default=None,
         description="应用名/输出目录名，英文 snake_case 短词，体现核心业务实体，如 todo、account_book；"
-        "识别不出时留空，由 B 从 api_spec.functions 派生兜底",
+        "识别不出时留空，由 B 从 api_spec.functions 派生；派生失败必须报错",
     )
     api_spec: ApiSpec = Field(
         description="接口规范（接口优先设计：先定义api_spec再分配任务）"
