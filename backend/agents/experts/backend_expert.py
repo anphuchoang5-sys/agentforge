@@ -103,18 +103,26 @@ def _build_retry_feedback(state: ProjectState) -> str:
     第一次生成时 Validator 还没跑过，state["failed_tests"] 是空的，返回
     空字符串，prompt 跟原来完全一样。
 
-    failed_tests 是 Validator 对整份代码（编译/ruff/pytest/全部验收标准）
-    的失败清单，不只是后端的锅——有的可能是前端界面或测试用例的问题。
-    不去猜哪条该过滤（problem.md 第42条：目前的数据结构猜不准哪条标准属于
-    哪个专家），全部给模型看，交给它自己判断哪些是这份后端代码能修的。
+    failed_tests 里每一条现在都带 task_type（backend/frontend/test/
+    ui_validate/None），只过滤掉明确标为 frontend/ui_validate 的失败项——
+    task_type 为 None 的项（compile/ruff/pytest 这类检查产生的失败，
+    标不出确切归属）依然要给 BackendExpert 看，因为标不出类型不代表跟
+    它无关。
     """
     failed_tests = state.get("failed_tests")
     if not failed_tests:
         return ""
 
+    relevant_failures = [
+        f for f in failed_tests
+        if f.get("task_type") not in ("frontend", "ui_validate")
+    ]
+    if not relevant_failures:
+        return ""
+
     reasons = "\n".join(
         f"- [{f.get('name', '?')}] {f.get('reason', '')}"
-        for f in failed_tests
+        for f in relevant_failures
     )
     prev_code = state.get("backend_code") or ""
 
@@ -195,11 +203,21 @@ def backend_expert_node(state: ProjectState) -> dict:
         caller="BackendExpert",
     )
 
-    code = _extract_code(response.content)
-    frontend_code = state.get("frontend_code")
-    required_names = _extract_frontend_imports(frontend_code) if frontend_code else None
-    _assert_api_functions_exist(code, decomp, required_names)
+    try:
+        code = _extract_code(response.content)
+        frontend_code = state.get("frontend_code")
+        required_names = _extract_frontend_imports(frontend_code) if frontend_code else None
+        _assert_api_functions_exist(code, decomp, required_names)
+    except RuntimeError as e:
+        # 重试轮次里 LLM 有可能不按约定返回（比如漏实现某个接口函数）；直接
+        # raise 会绕过 should_retry 直接终止整条流程——这个节点本来就是每轮
+        # 重试都会被调用的，跟 test_expert_node 已有的"不直接raise"原则保持
+        # 一致：老实返回失败信号，state 里的 backend_code/backend_path 保留
+        # 上一轮的值不变，让重试闭环有机会下一轮重新尝试
+        print(f"[BackendExpert] ❌ 本轮生成失败，保留上一轮代码: {e}")
+        return {"backend_generated": False, "app_output_dir": app_output_dir}
+
     path = write_file(f"{app_output_dir}/db.py", code)
 
     print(f"[BackendExpert] 完成，代码已写入 {path}")
-    return {"backend_code": code, "backend_path": path, "app_output_dir": app_output_dir}
+    return {"backend_code": code, "backend_path": path, "backend_generated": True, "app_output_dir": app_output_dir}

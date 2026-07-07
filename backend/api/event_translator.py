@@ -27,6 +27,7 @@ import time
 class EventTranslator:
     def __init__(self):
         self._backend_runs = 0
+        self._frontend_runs = 0
         self._frontend_done = False
         self._max_progress = 0
         self._validator_runs = 0
@@ -70,6 +71,14 @@ class EventTranslator:
             events.append(self._log("System", f"第 {self._backend_runs - 1} 轮修复开始", "warn"))
             events.append(self._status("test", "idle"))
             events.append(self._status("validator", "idle"))
+        # backend_generated=False：本轮 LLM 输出没通过校验（比如漏实现某个接口
+        # 函数），backend_expert_node 已经老实返回失败信号而不是 raise（跟
+        # test_expert_node 的"不直接raise"原则一致），这里同样不能再拿"必须有
+        # path/code"的老标准去拦这个合法的失败结果
+        if output.get("backend_generated") is False:
+            events.append(self._log("BackendExpert", "本轮后端代码生成失败，保留上一轮代码，等待下一轮重试", "warn"))
+            events.append(self._status("backend", "error"))
+            return events
         path = output.get("backend_path")
         if not path or not output.get("backend_code"):
             raise RuntimeError("BackendExpert 事件缺少 backend_path/backend_code，不能视为生成完成")
@@ -80,14 +89,29 @@ class EventTranslator:
         return events
 
     def _on_frontend_expert(self, output: dict) -> list[dict]:
+        self._frontend_runs += 1
         self._frontend_done = True
+        events = []
+        if self._frontend_runs > 1:
+            events.append(self._log("System", f"第 {self._frontend_runs - 1} 轮修复（前端）开始", "warn"))
+        # frontend_generated=False：本轮 LLM 输出没通过校验（比如生成的代码
+        # 不是 Tkinter 应用），frontend_expert_node 已经老实返回失败信号而不是
+        # raise（跟 test_expert_node 的"不直接raise"原则一致），这里同样不能
+        # 再拿"必须有 path/code"的老标准去拦这个合法的失败结果——这条分支在
+        # frontend_expert 只跑一次的年代走不到，现在它会在重试轮次里被反复
+        # 调用，必须能优雅处理
+        if output.get("frontend_generated") is False:
+            events.append(self._log("FrontendExpert", "本轮界面代码生成失败，保留上一轮代码，等待下一轮重试", "warn"))
+            events.append(self._status("frontend", "error"))
+            if self._backend_runs >= 1:
+                events.append(self._status("test", "running"))
+            events.append(self._progress(45))
+            return events
         path = output.get("frontend_path")
         if not path or not output.get("frontend_code"):
             raise RuntimeError("FrontendExpert 事件缺少 frontend_path/frontend_code，不能视为生成完成")
-        events = [
-            self._log("FrontendExpert", f"前端代码生成完成: {path}", "success"),
-            self._status("frontend", "success"),
-        ]
+        events.append(self._log("FrontendExpert", f"前端代码生成完成: {path}", "success"))
+        events.append(self._status("frontend", "success"))
         if self._backend_runs >= 1:
             events.append(self._status("test", "running"))
         events.append(self._progress(45))

@@ -80,15 +80,30 @@ def count_iteration(state: ProjectState) -> dict:
     return {"iteration_count": state.get("iteration_count", 0) + 1}
 
 
-def should_retry(state: ProjectState) -> str:
-    """条件边：通过 → done，失败且未超限 → retry"""
+def should_retry(state: ProjectState) -> list[str] | str:
+    """条件边：通过 → 结束，失败且未超限 → 按 task_type 决定重试哪些专家
+
+    backend_expert 每轮重试固定触发（保证 backend_expert → test_expert 这条边
+    永远只被触发一次，不需要给 frontend_expert 新增任何出边）；如果 failed_tests
+    里出现 frontend/ui_validate 类型的失败项，追加触发 frontend_expert。
+    """
     if state.get("validation_passed"):
-        return "done"
+        return END
     if state.get("iteration_count", 0) >= 5:
         print("[Validator] 已达最大重试次数(5)，强制终止")
-        return "done"
-    print(f"[Validator] 第{state.get('iteration_count',0)}轮未通过，重试...")
-    return "retry"
+        return END
+
+    failed_tests = state.get("failed_tests") or []
+    frontend_failed = any(
+        f.get("task_type") in ("frontend", "ui_validate")
+        for f in failed_tests
+    )
+    targets = ["backend_expert"]
+    if frontend_failed:
+        targets.append("frontend_expert")
+
+    print(f"[Validator] 第{state.get('iteration_count', 0)}轮未通过，重试目标: {targets}")
+    return targets
 
 
 def build_graph() -> StateGraph:
@@ -140,13 +155,6 @@ def build_graph() -> StateGraph:
 
     # validator → 计数 → 条件边
     graph.add_edge("validator", "count")
-    graph.add_conditional_edges(
-        "count",
-        should_retry,
-        {
-            "done": END,
-            "retry": "backend_expert",  # 重试从专家节点重新开始
-        },
-    )
+    graph.add_conditional_edges("count", should_retry)
 
     return graph.compile()

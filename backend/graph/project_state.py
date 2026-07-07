@@ -18,10 +18,12 @@ class ProjectState(TypedDict):
     # ── BackendExpert 写 ────────────────────────
     backend_code: Optional[str]              # 生成的后端代码内容
     backend_path: Optional[str]             # 落盘路径，如 ./output/generated_app/db.py
+    backend_generated: Optional[bool]        # 本轮是否成功生成（LLM 输出不合规时为 False，不视为流程崩溃）
 
     # ── FrontendExpert 写 ───────────────────────
     frontend_code: Optional[str]
     frontend_path: Optional[str]
+    frontend_generated: Optional[bool]       # 本轮是否成功生成（LLM 输出不合规时为 False，不视为流程崩溃）
 
     # ── TestExpert 写 ───────────────────────────
     test_code: Optional[str]
