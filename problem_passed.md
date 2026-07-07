@@ -446,8 +446,11 @@
   "又生成一遍，赌运气好点"，不是"看到报错后针对性修复"
 - **跟 #21 的关系**：#21 说的是"重试有时候找错专家"（该修前端却只回退
   后端）；这一条是"就算侥幸找对了该修的专家，这个专家也不知道要修什么"——
-  两个问题独立存在，#21 没修，这一条修了照样有价值（找对专家时至少能真的
-  改对地方）
+  两个问题独立存在，写这条时 #21 还没修，这一条修了照样有价值（找对专家时
+  至少能真的改对地方）
+  - **追记（07-07）**：#21 的"重试找错专家"这一半后来也修复了（见本文件
+    下方 #21 条目），现在两个问题都已解决——重试既能按 `task_type` 找对
+    专家，专家也能读到上一轮的具体失败原因
 - **不需要接入记忆系统**：这纯粹是"当前这一次 run() 内部，同一个 `state`
   字典里已经有的数据没被读到"，跟 mem0/ChromaDB/LangGraph MemorySaver 那层
   跨会话记忆（problem.md 第7条）完全是两码事
@@ -571,3 +574,71 @@
   全流程（Commander → Backend → Frontend → Test → Validator）完整跑通。
   验证通过后自动截图，17 条验收标准全部通过。
 - **联调结果**：验证通过（1 个 warning，无 error），测试 22/22 通过
+
+### 21. workflow.py 重试逻辑问题①：重试只会回头改 BackendExpert，FrontendExpert 永远不会被重新触发
+- **说明**：原始 #21 记录了两个问题，这里只挪走已修复的这一半（"重试只回退
+  backend"）；另一半（"迭代次数比文档少一次"）仍未修复，留在 problem.md 里
+  继续用编号 #21 跟踪，是这两份文档里唯一一次"一个编号拆成两条不同命运"的情况
+- **在哪**：`backend/graph/workflow.py` 的 `should_retry`（约第83-106行）
+- **实际情况（修复前）**：失败后的条件边只指回 `"backend_expert"`，
+  `FrontendExpert` 只在第一轮跑一次，之后所有重试都只重新生成后端代码。
+  如果 Validator 判定失败的原因出在前端，剩余重试预算全部在修一个跟问题
+  无关的地方——真实复现过：todo 应用"每个事项要有独立完成/删除按钮"这条
+  验收标准连续 4 轮失败，`app.py` 从第 0 轮到第 3 轮字面意思完全没变
+- **状态**：✅ 已修复（07-07）。前提工作是先修 #42（验收标准归属类型丢失），
+  拿到 `failed_tests[].task_type` 之后，`should_retry` 改成：`backend_expert`
+  每轮固定触发（保证 `backend_expert → test_expert` 这条边永远只被触发一次，
+  不需要给 `frontend_expert` 新增任何出边，绕开"两条边汇入同一节点被触发
+  两次"的历史坑，即 problem_passed.md 里 validator 那次教训），`failed_tests`
+  里出现 `task_type` 为 `frontend`/`ui_validate` 时追加触发 `frontend_expert`。
+  落地前用这个项目实际安装的 LangGraph 版本（1.2.7）搭了一个四节点玩具图，
+  真实验证过条件边函数返回单元素/双元素列表时的调度行为，以及"只连接
+  backend_expert 的下游节点会不会等 frontend_expert 也跑完"——确认安全后
+  才改真图，不是凭经验假设。委托 Codex 实现（`workflow.py::should_retry`、
+  `backend_expert.py`/`frontend_expert.py` 的 `_build_retry_feedback()` 按
+  `task_type` 过滤失败原因、`event_translator.py` 的重试轮次计数），交付后
+  用真实构造的 6 种场景（只backend失败/只frontend失败/前后端都失败/通过/
+  达到轮数上限/`task_type` 为 `None`）独立复现验证，交叉验证了两个专家的
+  `_build_retry_feedback()` 不会互相泄漏对方的失败原因。真实跑一遍此前
+  反复复现"前端按钮结构不对"5 轮全部失败的 todo 应用场景作为回归测试，
+  确认这次前后端会按需同时被拉回去重试
+
+### 42. workflow.py:49 把所有任务的验收标准拍平后丢失了任务类型归属，堵死了 #21 的一条修复路径
+- **状态**：✅ 已修复（07-07）。`workflow.py::validator_node` 现在额外构造
+  `criteria_task_type: dict[str, str]`（验收标准原文 → `SubTask.type`），
+  跟拍平后的 `criteria` 列表一起传给 `validate()`，经 `validator_stub.py`
+  的 HTTP/直连两条路径转发到 `checkers.py::llm_check()`，用**精确字符串
+  匹配**（不依赖 LLM 自己猜）查回归属，写进 `FailedTest.task_type`
+  （`backend/agents/validator/schemas.py` 新增字段，`Optional[Literal[...]]`，
+  非 acceptance_criteria 比对产生的失败项如 compile/ruff/pytest 保持 `None`，
+  没有被强行瞎猜）。同时把 `test_expert.py` 的测试生成 prompt 也改成读取
+  全部任务（而不只是 `type=="test"` 那一条）的验收标准，让生成的测试真正
+  对着验收标准写。真实调用验证过 HTTP 和直连两条路径都能正确返回
+  `task_type`，还用真实的 3 类失败（backend/frontend/None）交叉验证了
+  下游过滤逻辑没有互相泄漏
+
+### 51. FrontendExpert/BackendExpert 生成失败时直接 raise，会绕过重试预算把整条流程崩溃退出
+- **在哪**：`backend/agents/experts/frontend_expert.py::frontend_expert_node`
+  的 `_assert_tkinter_app()` 检查、`backend_expert.py::backend_expert_node`
+  的 `_assert_api_functions_exist()`/`_extract_code()` 检查
+- **实际情况**：这两个断言本身没问题（LLM 输出不合规确实该拦下来），但拦下来
+  之后的处理方式是直接 `raise RuntimeError`，会绕过 `should_retry` 直接让
+  `graph.stream()` 抛出未捕获异常，整条流程判定为"执行出错"退出——这个崩溃
+  路径在 `frontend_expert_node` 只跑一次的年代（修复 #21 之前）永远走不到，
+  `backend_expert_node` 本身一直会在重试轮次里被调用，理论上一直有这个隐患，
+  只是此前测试运气好没撞上过
+- **触发场景**：#21 修复后 `frontend_expert_node` 第一次真的在重试轮次里被
+  调用，用户真实测试时撞上了——某一轮 LLM 返回的界面代码不含 tkinter
+  import，`_assert_tkinter_app` 按设计抛出异常，整个任务直接终止在
+  "代码生成流程执行失败"，而不是走正常的"这轮没通过，重试"
+- **状态**：✅ 已修复（07-07）。两个专家节点现在在断言失败时不再 raise，
+  改成老实返回 `{"frontend_generated": False}` / `{"backend_generated": False}`，
+  `state` 里的 `frontend_code`/`backend_code` 保留上一轮的值不变，跟
+  `test_expert_node` 已有的"不直接raise"原则对齐。`project_state.py` 新增
+  `frontend_generated`/`backend_generated` 字段，`event_translator.py` 的
+  `_on_frontend_expert`/`_on_backend_expert` 相应放宽——不再要求每次调用
+  都必须有非空的 `path`/`code`，`*_generated is False` 时输出"本轮生成失败，
+  保留上一轮代码，等待下一轮重试"的日志而不是抛异常。真实构造了触发
+  `_assert_tkinter_app` 失败的场景验证不再崩溃。注意：这个修复不会让重试
+  轮次变多——`iteration_count` 是在 `validator → count` 之后计数，不管这轮
+  生成成功与否都会 +1，这里只是避免任务被腰斩，不是新增一次重试机会

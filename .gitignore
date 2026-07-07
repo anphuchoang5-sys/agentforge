@@ -17,11 +17,17 @@ node_modules/
 /dist/
 /build/
 .next/
+/frontend/dist/
+/frontend/dist-ssr/
+/frontend/build/
+/frontend/.vite/
+/frontend/%USERPROFILE%/
 
 # 数据库文件（运行时生成）
 *.db
 *.sqlite
 *.sqlite3
+/data/
 
 # 向量数据库（运行时生成）
 chroma_db/
@@ -30,6 +36,7 @@ chroma_db/
 # 日志
 *.log
 logs/
+/runtime-logs/
 
 # OS
 .DS_Store
@@ -49,6 +56,13 @@ credentials.json
 
 # 流程运行产物（run() 生成的应用代码/zip，机器特定，不提交）
 /output/
+*.zip
+
+# Python 测试/质量检查缓存
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # 自测截图（运行时生成，不提交）
 _selftest_*.png

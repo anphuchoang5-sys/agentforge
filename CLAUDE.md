@@ -43,9 +43,10 @@
 - **记忆层（mem0 / ChromaDB / LangGraph MemorySaver）完全未实现**，不是"简化版"，是零。`graph.compile()`
   没传 `checkpointer`，`run()` 每次调用完全无状态，同一需求跑两次互不参考（problem.md #7/#18）。CLAUDE.md
   已把这层标为 Week2 选做，不算失职，但演示/汇报时应说清楚这一点
-- **重试闭环只会回头改 BackendExpert**：失败后的条件边只指向 `"backend_expert"`，`FrontendExpert` 只在
-  第一轮跑一次；如果 Validator 判定失败的原因出在前端，剩余重试轮次全部在修一个跟问题无关的地方
-  （problem.md #21）
+- **✅ 重试闭环已按失败类型路由**（07-07 修复，problem_passed.md #21/#42）：`failed_tests` 现在带
+  `task_type` 归属，`should_retry` 按此决定回退目标——`BackendExpert` 每轮固定触发，`failed_tests`
+  出现 `frontend`/`ui_validate` 类型时追加触发 `FrontendExpert`，不再是"永远只改 BackendExpert"。
+  仍未修复的是重试轮数计数时机（下面这条）
 - **已识别但未加固的安全面**：MCP 暴露的 `run_command`（`shell=True`，无白名单）和 `read_file`/`write_file`
   （无目录穿越防护）——当前唯一真实调用方传的都是写死的路径/命令，主链路本身安全，但作为通用 MCP 能力
   设计上没有防护，扩大暴露范围前需要补（problem.md #24/#25）
@@ -80,7 +81,7 @@
 | 命令工具 | `run_command`（执行 pip install、python main.py 等） |
 | 状态机 | LangGraph StateGraph：待执行 → 执行中 → 成功/失败 |
 | 全流程入口 | `run(user_input)` 协调 A 和 C 的调用，返回交付物 —— 已完成，含异常包装，不再裸抛/静默产出空 zip（problem.md #29） |
-| 循环控制 | 验证失败后最多重试 5 次，超时转人工 —— 实际是"首次+4次重试"且只回退 BackendExpert（problem.md #21） |
+| 循环控制 | 验证失败后最多重试 5 次，超时转人工 —— 实际是"首次+4次重试"（problem.md #21，计数时机未修复）；回退目标已按 `task_type` 智能路由，不再只改 BackendExpert（problem_passed.md #21） |
 
 **不做的事**：模型 API 封装（A）、验证者 Agent（C）、桌面控制（C）、前端界面（D）
 
@@ -603,7 +604,7 @@ ollama serve  # 默认监听 localhost:11434
 
 | 天数 | 任务 | 产出 | 优先级 | 状态 |
 |------|------|------|--------|------|
-| Day 8 | Validator Agent + 条件边闭环 | 代码不合格时触发修复循环 | 必做 | ✅ 完成，但闭环只回退 BackendExpert（problem.md #21，未修复） |
+| Day 8 | Validator Agent + 条件边闭环 | 代码不合格时触发修复循环 | 必做 | ✅ 完成，闭环已按 `task_type` 路由到对应专家（problem_passed.md #21，07-07 修复） |
 | Day 9 | mem0 记忆集成 + LangGraph Checkpointing | 支持断点续跑，跨会话记忆 | 选做 | ❌ 未做，`graph.compile()` 未传 checkpointer（problem.md #7） |
 | Day 10 | React 前端骨架 + React Flow Agent 图 | 可视化显示 Agent 节点状态 | 必做 | ✅ 完成，已接真实后端（不再是 Mock） |
 | Day 11 | xterm.js 实时日志 + 任务面板 | WebSocket 推流显示 Agent 输出 | 必做 | ✅ 完成，WS 已支持多订阅者重放（problem.md #28） |

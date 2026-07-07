@@ -4,7 +4,14 @@
 > 方便后续决定哪些要补、哪些接受现状、哪些要改文档降低承诺。
 > 已修复的问题不再堆在这个文件里，统一挪到 [problem_passed.md](problem_passed.md) 存档，
 > 这个文件只留还没解决/暂不处理的问题，读起来更快找到真正待办的东西。
-> 更新日期：2026-07-06（把 22 条已修复记录挪到 problem_passed.md；
+> 更新日期：2026-07-07（#21 拆分：其中"重试只会回头改 BackendExpert"的部分
+> 已修复挪到 problem_passed.md，只剩"迭代次数比文档少一次"这半留在这里，
+> 编号不变；#42（验收标准拍平后丢失任务类型归属，是修 #21 的结构性前置
+> 阻塞项）已修复挪走；新增 #51：修完 #21 后，`FrontendExpert`/`BackendExpert`
+> 生成失败时直接 `raise` 会绕过重试预算把整条流程崩溃退出，是真实测试中
+> 撞上并已修复的新问题，记录见 problem_passed.md）
+>
+> 2026-07-06 历史记录：把 22 条已修复记录挪到 problem_passed.md；
 > 新增第三轮代码审查 #39-45，其中 5 条已修复挪走，#41/#42 未修复留在这里；
 > 新增 #46：MCP 工具从未被 Agent 自主调用过，主链路完全绕开 MCP 协议直接调
 > 普通函数；#47（BackendExpert 重试拿不到上一轮失败原因）/#48/#49/#50
@@ -107,23 +114,16 @@ Commander 生成的任何调度信息。
 > #29（run() 异常处理与空交付物）/#31（GBK 控制台崩溃）已修复，记录挪去了
 > problem_passed.md，下面只留没修的。
 
-### 21. `workflow.py` 的重试逻辑存在两个实质问题（本次审查最值得优先看的一条）
+### 21. `count_iteration` 计数时机导致实际重试轮数比文档少一次
 - **在哪**：`backend/graph/workflow.py` 的 `count_iteration`/`should_retry`
-  （约71-80行）和失败后的条件边路由（约136-143行）
-- **实际情况**：
-  ① **迭代次数比文档少一次**：`count_iteration` 在**第一次**验证（不是重试，
-  是第一次跑）之后就已经 `+1`，`should_retry` 在 `iteration_count >= 5` 时停止——
-  实际效果是"第一次尝试 + 4 次重试"，不是文档/`project_state.py` 字段注释里
-  写的"最多重试 5 次"。少了一次真实的修复机会，不报错，只是安静地比设计值少跑一轮。
-  ② **重试只会回头改 BackendExpert，FrontendExpert 永远不会被重新触发**：
-  失败后的条件边只指回 `"backend_expert"`，`FrontendExpert` 只在第一轮跑一次
-  （从 `decompose` 那条边进来），之后所有重试都只重新生成后端代码。如果
-  Validator 判定失败的原因出在前端（界面缺元素、验收标准是关于 UI 的），
-  接下来最多 4 轮重试全部在修一个跟问题无关的地方，前端的真实 bug 在 5 轮
-  预算内永远没有机会被修复。代码里现有注释只论证了"为什么不会被 LangGraph
-  的 superstep 机制抢跑"，没有覆盖"前端类 bug 结构性修不好"这个问题
-- **状态**：未修复，直接影响"闭环自动修复"这个核心卖点在前端 bug 场景下的有效性。
-  第三轮审查又发现了一个前置阻塞项，见下面 #42
+- **实际情况**：`count_iteration` 在**第一次**验证（不是重试，是第一次跑）
+  之后就已经 `+1`，`should_retry` 在 `iteration_count >= 5` 时停止——实际
+  效果是"第一次尝试 + 4 次重试"，不是文档/`project_state.py` 字段注释里
+  写的"最多重试 5 次"。少了一次真实的修复机会，不报错，只是安静地比设计值
+  少跑一轮
+- **状态**：未修复。（原 #21 还记录了"重试只会回头改 BackendExpert，
+  FrontendExpert 永远不会被重新触发"这个问题，07-07 已经按 `failed_tests`
+  的 `task_type` 修复，记录挪去了 problem_passed.md——这里只剩这一条还没处理）
 
 ### 23. `task_manager.py` 的任务字典没有回收机制，长期运行会内存泄漏
 - **在哪**：`backend/api/task_manager.py` 的 `_tasks` 字典和 `_background_refs`
@@ -304,7 +304,8 @@ Commander 生成的任何调度信息。
 > #39（Validator 逐轮结果没有实时推给前端）/#40（loader.py 异常类型不符）/
 > #43（WebSocket 事件 Pydantic 模型是摆设）/#44（validator 包初始化的导入
 > 副作用）/#45（前端 HealthStatus 类型不符）都已修复，记录挪去了
-> problem_passed.md。下面 #41/#42 复核后判定暂不处理，留在这里。
+> problem_passed.md。#42 当时复核判定暂不处理，07-07 已修复（见 #21 的
+> 前置阻塞项说明），记录也挪走了。下面 #41 复核后判定暂不处理，留在这里。
 
 ### 41. Commander 的 structured-output 空任务回退路径会让同一次请求被计费两次
 - **在哪**：`backend/agents/commander/decompose.py:111-124`（`_try_structured_output`）
@@ -325,18 +326,6 @@ Commander 生成的任何调度信息。
   且当前没有任何看板/查询在消费这种区分，先不做
 - **状态**：未修复（评估后判定不是逻辑错误，是记账粒度的产品选择，不在"修
   bug/冗余/重复"范围内）
-
-### 42. `workflow.py:49` 把所有任务的验收标准拍平后丢失了任务类型归属，堵死了 #21 的一条修复路径
-- **在哪**：`backend/graph/workflow.py:49`
-- **实际情况**：`criteria = [c for t in decomp.tasks for c in t.acceptance_criteria]`
-  把 backend/frontend/test 任务的验收标准合并成一个不带来源的扁平列表再传给
-  `validate()`
-- **为什么值得单独记一条**：这不只是 #21（重试只回退 backend）的又一个症状，
-  而是**以后想修 #21 时的结构性障碍**——就算改 `should_retry` 想按"哪条验收
-  标准失败了"智能选择回退到 backend 还是 frontend，现在的数据结构已经没法把
-  失败的标准（`checkers.py` 里以 `name=f"llm:{criteria_text}"` 匹配）反查回
-  `SubTask.type`，除非再加一次脆弱的字符串重新匹配
-- **状态**：未修复（记录为 #21 的前置阻塞项）
 
 ### 46. `mcp_server.py` 暴露的三个 MCP 工具，主链路从未真正调用过——"Agent 自主用 MCP 工具"目前是空的
 - **在哪**：`backend/mcp_tools/mcp_server.py` 全文件；对比
