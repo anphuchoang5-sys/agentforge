@@ -104,6 +104,62 @@ def _resolve_window(app_or_window):
     return app_or_window
 
 
+def _sort_by_position(widgets: list) -> list:
+    """按屏幕坐标从上到下、同行从左到右排序。
+
+    pywinauto 的 descendants() 返回顺序取决于 Win32 子窗口枚举顺序（Z-order），
+    实测与 Tkinter 代码里 .pack() 的创建顺序相反（最后创建的控件排最前）。
+    LLM 生成测试计划时是按源码从上到下阅读来判断"第几个控件"，只有按屏幕
+    坐标重新排序才能让 order_hint 和实际控件对上。
+    """
+    return sorted(widgets, key=lambda w: (w.rectangle().top, w.rectangle().left))
+
+
+def list_inputs(window) -> list:
+    """按视觉从上到下顺序返回窗口里所有输入框控件（TkChild 类，高度 < 40px）"""
+    window = _resolve_window(window)
+    candidates = window.descendants(class_name="TkChild")
+    return _sort_by_position([c for c in candidates if c.rectangle().height() < 40])
+
+
+def list_labels(window) -> list:
+    """按视觉从上到下顺序返回窗口里所有 Label 控件"""
+    window = _resolve_window(window)
+    return _sort_by_position(window.descendants(class_name="Static"))
+
+
+def list_output_widgets(window) -> list:
+    """按视觉从上到下顺序返回窗口里所有列表/表格类控件（TkChild 类，高度 >= 40px）"""
+    window = _resolve_window(window)
+    candidates = window.descendants(class_name="TkChild")
+    result = []
+    for candidate in candidates:
+        if candidate.rectangle().height() < 40:
+            continue
+        nested = candidate.descendants(class_name="TkChild")
+        if nested:
+            continue
+        result.append(candidate)
+    return _sort_by_position(result)
+
+
+def list_buttons(window) -> list:
+    """按视觉从上到下顺序返回窗口里所有按钮控件"""
+    window = _resolve_window(window)
+    return _sort_by_position(window.descendants(class_name="Button"))
+
+
+def click_widget(widget) -> None:
+    """对已经定位好的控件对象做真实点击（click_input，不是 .click()）"""
+    widget.click_input()
+
+
+def type_into_widget(widget, text: str) -> None:
+    """对已经定位好的控件对象敲入文字（click_input 聚焦 + type_keys 输入）"""
+    widget.click_input()
+    widget.type_keys(text, with_spaces=True)
+
+
 # ===== UI 操作 =====
 
 def ui_click(app_or_window, locator: str, timeout: float = 5) -> None:
@@ -116,6 +172,11 @@ def ui_click(app_or_window, locator: str, timeout: float = 5) -> None:
     window = _resolve_window(app_or_window)
     elem = _find(window, locator)
     elem.wait("enabled visible", timeout=timeout)
+    try:
+        elem.click_input()
+        return
+    except Exception:
+        pass
     elem.click()
 
 
@@ -129,7 +190,10 @@ def ui_input(app_or_window, locator: str, text: str, timeout: float = 5) -> None
     window = _resolve_window(app_or_window)
     elem = _find(window, locator)
     elem.wait("enabled visible", timeout=timeout)
-    elem.set_focus()
+    try:
+        elem.click_input()
+    except Exception:
+        elem.set_focus()
 
     # 策略1：set_text（直接赋值，不经过键盘模拟，中文/特殊字符安全）
     try:
@@ -142,6 +206,7 @@ def ui_input(app_or_window, locator: str, text: str, timeout: float = 5) -> None
     try:
         import pywinauto.clipboard as _clip
         _clip.SetClipboardData(text)
+        elem.click_input()
         elem.type_keys("^a{BACKSPACE}", with_spaces=True)
         elem.type_keys("^v", with_spaces=True)
         return
@@ -149,6 +214,7 @@ def ui_input(app_or_window, locator: str, text: str, timeout: float = 5) -> None
         pass  # 剪贴板可能被占用，继续兜底
 
     # 策略3：type_keys 兜底（仅纯 ASCII 可靠）
+    elem.click_input()
     elem.type_keys("^a{BACKSPACE}", with_spaces=True)
     elem.type_keys(text, with_spaces=True)
 
@@ -198,7 +264,14 @@ def screenshot(app_or_window=None) -> str:
         # 这块屏幕区域被别的窗口挡住，截到的会是挡在上面的窗口内容，不是目标
         # 应用真正的画面。截图前先把目标窗口切到最前面/给焦点，避免被其他
         # 窗口遮挡导致截图内容驴唇不对马嘴
-        window.set_focus()
+        try:
+            window.set_focus()
+        except Exception as e:
+            # 不能吞得完全无声：set_focus 失败意味着截图可能被遮挡窗口覆盖
+            # （problem_passed.md #50 的原始 bug），这里只是不让它中断截图流程，
+            # 但必须留下可见痕迹，否则会静默复现 #50。
+            import sys as _sys
+            print(f"[screenshot] ⚠️ set_focus 失败，截图可能被遮挡: {type(e).__name__}: {e}", file=_sys.stderr)
         img = window.capture_as_image()
 
     buf = io.BytesIO()

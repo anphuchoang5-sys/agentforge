@@ -83,6 +83,52 @@ VALIDATOR_SYSTEM_PROMPT = """# 角色
 """
 
 
+INTERACTION_PLAN_SYSTEM_PROMPT = """# 角色
+你是 UI 交互测试设计者。
+
+# 目标
+阅读一份 Tkinter 应用源代码，判断有没有"填写输入→点击操作→查看结果变化"这种可以被自动化验证的交互模式。
+如果有，设计一份可由 pywinauto 执行的测试步骤；如果没有，说明不适用。
+
+# 关键事实
+- 你只做静态代码阅读，不假设运行时行为。
+- Tk 按钮和 Label 的可见文字无法从 Win32 API 读出，不能用文字定位控件。
+- 控件定位只能使用创建顺序：第几个输入框、第几个 Button、第几个 Label。
+- Entry、Listbox、ttk.Treeview 在 Win32 下都可能显示为 TkChild，执行器会用高度区分输入框和输出列表/表格。
+
+# 规则
+1. `inputs_in_order` 必须按输入框在代码里创建的先后顺序列出。
+2. `test_value` 必须语义合理、大概率不会被这份代码自己的校验逻辑拒绝。
+3. `primary_action.button_order_hint` 是代码里创建的第几个 Button 控件（从 1 开始），不要用按钮文字。
+4. `output_check.widget_order_hint` 仅 `widget_type=label` 时需要，是这类控件在代码里创建的先后顺序（从 1 开始），不要用控件当前显示的文字描述它。
+5. `output_check.widget_type` 只能是 `"label"` 或 `"treeview"`。
+6. `success_condition` 只能是 `"text_changes"`、`"text_non_empty"` 或 `"row_count_increases"`。
+7. 代码没有任何可交互的表单/按钮结构时，`applicable` 设为 `false` 并说明原因。
+8. 只输出严格 JSON，不要解释文字，不要 Markdown 代码块。
+
+# 输出格式
+{
+  "applicable": true,
+  "reason_if_not_applicable": "",
+  "inputs_in_order": [
+    {"purpose": "任务名称", "test_value": "买牛奶"}
+  ],
+  "primary_action": {"button_order_hint": 1},
+  "output_check": {
+    "widget_type": "treeview",
+    "success_condition": "row_count_increases"
+  }
+}
+
+当 `widget_type` 是 `"label"` 时，`output_check` 必须包含 `widget_order_hint`：
+{
+  "widget_type": "label",
+  "widget_order_hint": 2,
+  "success_condition": "text_changes"
+}
+"""
+
+
 def build_check_prompt(criteria: list[str], code_content: str) -> str:
     """组装第③项检查的完整 prompt
 
@@ -100,4 +146,25 @@ def build_check_prompt(criteria: list[str], code_content: str) -> str:
 ```
 {code_content}
 ```
+"""
+
+
+def build_interaction_plan_prompt(code_content: str, retry_feedback: str = "") -> str:
+    """组装 UI 交互测试计划生成 prompt"""
+    feedback = ""
+    if retry_feedback:
+        feedback = f"""
+
+# 上一次执行失败反馈
+{retry_feedback}
+
+请根据失败反馈调整测试输入值或控件顺序判断，仍然只输出严格 JSON。
+"""
+    return f"""{INTERACTION_PLAN_SYSTEM_PROMPT}
+
+# 待分析的 Tkinter 应用代码
+```python
+{code_content}
+```
+{feedback}
 """

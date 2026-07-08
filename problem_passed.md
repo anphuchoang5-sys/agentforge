@@ -642,3 +642,54 @@
   `_assert_tkinter_app` 失败的场景验证不再崩溃。注意：这个修复不会让重试
   轮次变多——`iteration_count` 是在 `validator → count` 之后计数，不管这轮
   生成成功与否都会 +1，这里只是避免任务被腰斩，不是新增一次重试机会
+
+### 52. Validator 的截图和桌面交互工具已经造好，但从未接入判断链路——"验收标准核对"实际是纯文本静态审查
+- **在哪**：`backend/agents/validator/run.py`（新增 `_ui_interaction_check`/
+  `_execute_interaction_plan`/`_region_changed`/`_json_from_llm_response`）、
+  `backend/agents/validator/validator_prompt.py`（新增 `INTERACTION_PLAN_SYSTEM_PROMPT`/
+  `build_interaction_plan_prompt`）、`backend/mcp_tools/desktop_control.py`
+  （新增 `list_inputs`/`list_labels`/`list_output_widgets`/`list_buttons`/
+  `click_widget`/`type_into_widget`）
+- **原问题**：见修复前的记录——四项检查里只有 `compile`/`ruff`/`pytest` 是真工具真数字，
+  第四项"验收标准核对"对 `frontend`/`ui_validate` 类型标准本质是 LLM 读源码猜行为，
+  `screenshot(window)` 拍出来的截图从没被任何程序或模型比对过，`ui_click`/`ui_input`
+  定义了但全仓库没有真实调用方
+- **状态**：✅ 已实现"待决策事项"里的方案三（真正接入 UI 交互工具），07-08 完成，
+  由 Codex 负责主体实现（任务简报见已删除的 `codex_task_ui_interaction.md`，
+  设计方案见已删除的 `ui_interaction_plan.md`），本人做完整验收后修复了 Codex
+  沙箱环境测不出来的两个真实 bug：
+  1. **控件枚举顺序反了**：`desktop_control.py` 新增的 `list_inputs`/`list_labels`/
+     `list_output_widgets`/`list_buttons` 最初直接返回 `window.descendants(...)` 的
+     原始顺序，注释写"按创建顺序返回"，但实测 `descendants()` 底层走 Win32 子窗口
+     枚举（Z-order），跟 Tkinter `.pack()` 的创建顺序是**反的**（最后创建的控件排
+     最前）。用真实 probe 脚本复现：一个先创建"城市:"标签、后创建空结果标签的窗口，
+     `list_labels()` 返回 `[0]=结果标签(宽8), [1]="城市:"标签(宽41)`，顺序整个倒过来。
+     这直接导致端到端测试里 LLM 生成的合理计划（`widget_order_hint=2` 想指向第二个
+     创建的结果标签）实际执行时打到了错误的静态标签上，报"操作前=41 操作后=41"
+     （没检测到变化）。修复：新增 `_sort_by_position()`，四个 `list_*` 函数改成按
+     `(rectangle().top, rectangle().left)` 重新排序再返回，用真实机器验证过修复后
+     顺序正确（`labels[0]` top=104 是先创建的"城市:"，`labels[1]` top=159 是后创建的
+     结果标签），并用真实 LLM 调用跑通了完整的 `_ui_interaction_check()`，Label 和
+     Treeview 两种场景都返回空失败列表（通过）
+  2. **像素比对阈值过严导致假阴性**：`_region_changed()` 默认阈值原为 0.02（2%），
+     实测"往空列表插入一条两字短文本"这种最常见场景，实际变化像素占比只有约 1.07%
+     ——列表控件面积通常很大，新增一行短文字占比天然小，2% 阈值会把这种常见场景
+     误判成"没变化"。用真实截图（before.png/after.png）验证变化确实发生后，把阈值
+     下调到 0.003（0.3%），既能捕捉到 1.07% 的真实变化，也用同图对比的控制测试
+     确认没引入假阳性
+  3. **`screenshot()` 里 `set_focus()` 的 try/except 吞得过于彻底**：Codex 为了让
+     截图在无活动桌面的沙箱环境里不崩溃，把 `window.set_focus()` 包了
+     `except Exception: pass`，但这样在真实桌面环境里如果 `set_focus()` 因为
+     Windows 前台锁定超时等原因失败，会完全静默地继续截图——等于可能悄悄
+     复现 #50（截图被遮挡窗口覆盖）却没有任何痕迹，跟 violent 分支"明确的
+     问题必须明确报错"的原则冲突。修复：保留不中断截图流程的容错行为，但
+     失败时打一行 `[screenshot] ⚠️ set_focus 失败，截图可能被遮挡` 到 stderr，
+     不再完全无声
+  执行流程：`validate()` 在第4步（LLM 文本核对）和第6步（截图）之间插入第5步，
+  独立启动一次应用（不与截图共享进程），LLM 读真实源码判断有没有"填输入→点按钮→
+  查看结果变化"的可交互模式，有则生成结构化测试计划（`inputs_in_order`/
+  `primary_action.button_order_hint`/`output_check`），执行器按顺序提示定位控件
+  （不用按钮/标签文字，因为 Tk 原生控件文字读不出来）、真实 `click_input()`+
+  `type_keys()` 操作、按 `success_condition`（`text_changes`/`text_non_empty`/
+  `row_count_increases`）比对操作前后结果，最多重试 3 次（1 次初始 + 2 次因
+  `test_value` 不合理触发的重试）
