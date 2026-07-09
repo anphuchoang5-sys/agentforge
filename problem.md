@@ -427,11 +427,38 @@ Commander 生成的任何调度信息。
   结构（导入时起别名、业务逻辑用原名）天然容易在两处之间打错字
 - **用户反馈**：明确反馈这个报错"蛮经常出现"，即同类问题在多次生成中
   反复出现，不是这次生成的偶然个例
-- **状态**：未修复，讨论中——候选方案是在 `FRONTEND_SYSTEM_PROMPT` 里加一条
-  规则，禁止对同目录下必然存在的 db 模块写 try/except 兜底导入，直接
-  `from db import 具体函数名` 即可
+- **状态**：✅ 已修复（07-09）。`FRONTEND_SYSTEM_PROMPT` 加了一条规则，禁止
+  对同目录下必然存在的 db 模块写 try/except 兜底导入，直接
+  `from db import 具体函数名`，见 problem_passed.md
 
-### 55. `ui_interact` 的 `row_count_increases` 检测经常判定失败，疑似是 #54（或同类前端运行时错误）的下游症状而非检测机制本身独立的问题
+### 55.（已通过移除 ui_interact 解决）`row_count_increases` 检测经常判定失败
+
+> 07-09 更新：这条讨论到最后没有继续修 `ui_interact` 本身——用户实际观察
+> 到的问题比"某个 widget 类型识别不了"更根本：整套"LLM 读代码猜一份操作
+> 计划、执行器纯按位置把计划套到界面控件上"的设计完全没有语义理解能力，
+> 会出现填错位置、选错控件、甚至做无意义操作（没有新记录就直接查询）这类
+> 表现。评估后判定这是个需要教会 AI"识别标签和输入框语义对应关系"的多日
+> 工程问题，不是这次能收敛的，决定**整体移除 `ui_interact` 交互点击验证**，
+> 保留纯截图 + LLM 静态审查（读代码 + 截图判断，不做真实点击模拟）。已删除
+> `backend/agents/validator/run.py` 里的 `_ui_interaction_check`/
+> `_execute_interaction_plan`/`_json_from_llm_response`/`_relative_rect`/
+> `_region_changed` 和 `validate()` 里的调用点，以及
+> `validator_prompt.py` 里的 `INTERACTION_PLAN_SYSTEM_PROMPT`/
+> `build_interaction_plan_prompt`。`desktop_control.py` 的通用控件操作函数
+> 未删除（不止服务于 ui_interact，保留）。
+>
+> 顺带发现并修复了真正的根因问题（不是最初以为的 BackendExpert 不遵守
+> 接口规范，而是 TestExpert）：`backend_expert.py` 早就有
+> `_assert_api_functions_exist()` 硬校验函数名，两轮生成 BackendExpert 都
+> 没触发失败；反而是 `test_expert.py` 完全没有校验它生成的测试代码引用的
+> `db.*` 函数名是否真的存在于 `backend_code` 里——尽管 prompt 里已经把完整
+> `backend_code` 摆在它面前，它仍然连续多轮写死 `add_record`/`get_records`
+> 这类跟实际代码（`add_transaction`/`get_transactions`）对不上的名字。已加
+> `_assert_test_uses_real_functions()` 校验并补上跟另外两个专家一致的
+> "捕获异常、返回失败信号、走正常重试"的安全网（`test_expert_node` 之前
+> 出错是裸 `raise`，会直接崩掉整条流程，不会优雅重试）。
+
+原始记录（供参考，问题本身已不再适用）：
 
 - **在哪**：`backend/agents/validator/run.py::_execute_interaction_plan()`
   里 `widget_type == "treeview"` 分支，`success_condition == "row_count_increases"`

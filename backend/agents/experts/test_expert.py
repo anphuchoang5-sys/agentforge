@@ -70,6 +70,42 @@ Complete acceptance criteria from Commander:
 {criteria_text}"""
 
 
+def _assert_test_uses_real_functions(test_code: str, backend_code: str) -> None:
+    """校验生成的测试代码引用的 db 函数名是否真的存在于 backend_code 里。
+
+    TestExpert 的 prompt 里已经把完整 backend_code 摆在它面前（见上面
+    prompt 拼接），但实测发现它仍然可能凭训练偏好瞎猜函数名（比如写
+    add_record 而不是 backend_code 里实际的 add_transaction），不会因为
+    "代码就在眼前"就必然抄对。这里跟 backend_expert.py::_assert_api_functions_exist
+    同思路，用字符串/正则解析代替 LLM 自己判断——从 test_code 里解析出它
+    实际引用的 db.* 函数名，跟 backend_code 里真实定义的函数名做交叉核对。
+
+    只覆盖 `from db import x, y` 和 `db.x(...)` 两种最常见写法；两者都不是就
+    不校验（宁可漏报，不误报——test_code 万一用了本文件没预料到的写法，
+    不该因为解析不出来就误判为"引用了不存在的函数"）。
+    """
+    defined = set(re.findall(r"^(?:async\s+)?def\s+(\w+)\(", backend_code, re.MULTILINE))
+    if not defined:
+        return
+
+    referenced: set[str] = set()
+    for match in re.finditer(r"from\s+\.?db\s+import\s+(\([^)]*\)|[^\n]+)", test_code):
+        block = match.group(1).strip().lstrip("(").rstrip(")")
+        for part in block.split(","):
+            name = part.strip().split(" as ")[0].strip()
+            if name.isidentifier():
+                referenced.add(name)
+    referenced.update(re.findall(r"\bdb\.(\w+)\(", test_code))
+
+    missing = sorted(referenced - defined)
+    if missing:
+        raise RuntimeError(
+            "TestExpert 生成的测试引用了 db 模块里不存在的函数: "
+            + ", ".join(missing)
+            + f"（db.py 实际定义的函数是: {', '.join(sorted(defined))}）"
+        )
+
+
 def test_expert_node(state: ProjectState) -> dict:
     """LangGraph 节点：生成测试代码并真实运行
 
@@ -130,9 +166,24 @@ Backend code already generated as db.py:
         caller="TestExpert",
     )
 
-    test_code = _extract_code(response.content)
-    if "def test_" not in test_code:
-        raise RuntimeError("TestExpert 生成的代码没有任何 def test_ 测试函数")
+    try:
+        test_code = _extract_code(response.content)
+        if "def test_" not in test_code:
+            raise RuntimeError("TestExpert 生成的代码没有任何 def test_ 测试函数")
+        _assert_test_uses_real_functions(test_code, backend_code)
+    except RuntimeError as e:
+        # 跟 backend_expert_node/frontend_expert_node 保持一致：这一轮生成有问题
+        # 不直接 raise 崩掉整条流程，而是老实返回失败信号，让 should_retry 的
+        # 重试闭环有机会在下一轮重新尝试（下一轮 backend_code 不变时，TestExpert
+        # 会重新生成一次测试代码，有机会自己纠正引用的函数名）
+        print(f"[TestExpert] ❌ 本轮生成失败: {e}")
+        return {
+            "test_code": None,
+            "test_path": None,
+            "test_results": f"生成失败：{e}",
+            "test_passed": False,
+            "pytest_report_path": None,
+        }
     test_path = write_file(f"{state['app_output_dir']}/test_app.py", test_code)
 
     # ── collect-only 验证：生成后立即检查测试是否可被 pytest 发现 ──
