@@ -161,7 +161,12 @@ def _launch_app(app_path: str, logs: List[str]):
     app = None
     connected_pid = None
     try:
-        proc = _sp.Popen([launcher, app_path], stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        proc = _sp.Popen(
+            [launcher, app_path],
+            stdout=_sp.DEVNULL,
+            stderr=_sp.DEVNULL,
+            cwd=str(app_path_obj.parent),
+        )
         logs.append(f"[screenshot] 子进程 PID={proc.pid}，等待窗口渲染...")
 
         # 轮询等窗口出现（Tkinter 渲染可能延迟 3-9 秒）

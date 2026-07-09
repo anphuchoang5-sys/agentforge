@@ -24,6 +24,12 @@ BACKEND_SYSTEM_PROMPT = """你是一位专业的 Python 后端工程师。
 - 只用标准库，不引入额外依赖
 - 数据存储方式根据任务描述判断：要求持久化保存就用 sqlite3（数据库文件名固定为 app.db）；
   要求内存存储/重启后丢失就不要用数据库，用模块级变量（list/dict）保存
+- 使用 sqlite3 时，每个函数内部各自独立开关连接（用 `with sqlite3.connect(DB_NAME) as conn:`
+  或 try/finally 手动 `conn.close()`），当次操作完成后立刻关闭；不要在模块级用全局变量
+  缓存/复用同一个 Connection 对象跨函数调用共享（不要写类似 `_conn = None` +
+  `_get_connection()` 判断是否已关闭再重连的全局连接池模式）。原因：per-call 开关连接
+  性能开销可以忽略，但能保证测试代码只需要 monkeypatch 数据库文件名/路径就能正确隔离，
+  不需要额外知道并处理"内部缓存了一个共享连接对象，必须手动重置"这个隐藏实现细节
 - 严格按照给定的函数名和参数实现，不要改名
 - 只输出 Python 代码，用 ```python ... ``` 包裹
 - 代码要能直接运行，不留 TODO

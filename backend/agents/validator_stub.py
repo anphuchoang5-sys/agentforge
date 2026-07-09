@@ -56,6 +56,11 @@ def validate(
             )
             resp.raise_for_status()
             return resp.json()
+        except requests.HTTPError as e:
+            detail = resp.text[:1000] if resp is not None else ""
+            raise RuntimeError(
+                f"C 的 HTTP 验证服务调用失败: {e}\n响应详情: {detail}"
+            ) from e
         except requests.RequestException as e:
             raise RuntimeError(f"C 的 HTTP 验证服务调用失败: {e}") from e
 
